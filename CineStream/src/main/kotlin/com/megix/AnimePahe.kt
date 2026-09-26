@@ -56,7 +56,10 @@ object AnimePahe {
 
     private fun headers(base: String) = mapOf(
         "Cookie" to "__ddg2_=1234567890",
-        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/124.0.0.0 Mobile Safari/537.36",
+        // MUST be CF_BYPASS_USER_AGENT (the solver's agent): Cloudflare binds
+        // cf_clearance to the solving UA, and a mismatched UA gets challenged
+        // even with valid cookies (Phisher replays its solving UA likewise).
+        "User-Agent" to CF_BYPASS_USER_AGENT,
         "Accept-Language" to "en-US,en;q=0.9",
         "Referer" to "$base/",
     )

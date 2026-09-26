@@ -42,8 +42,8 @@ import kotlinx.coroutines.sync.withLock
 object CineStreamExtractors {
 
     private const val CF_LOG_TAG = "CineStreamCloudflare"
-    // Must match WebView User-Agent for Cloudflare cookie validation
-    private const val CF_BYPASS_USER_AGENT = "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36"
+    // Shared CF_BYPASS_USER_AGENT (see ApiConstants.kt): must match the
+    // WebView User-Agent for Cloudflare cookie validation.
     private val cfMutexMap = ConcurrentHashMap<String, Mutex>()
     private val cfKillerMap = ConcurrentHashMap<String, CloudflareKiller>()
 

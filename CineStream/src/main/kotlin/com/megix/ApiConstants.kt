@@ -26,6 +26,11 @@ const val anilistAPI = "https://graphql.anilist.co"
 const val armIdsAPI = "https://arm.haglund.dev/api/v2"
 const val fanartAPI = "https://webservice.fanart.tv/v3"
 const val FANART_KEY = BuildConfig.FANART_KEY
+// Single shared UA for Cloudflare clearance: the settings WebView solves
+// challenges with this agent, so all CF-protected requests must present the
+// SAME agent — Cloudflare binds cf_clearance to the solving UA (Phisher
+// parity: capture-and-replay; ours is fixed, so one constant suffices).
+const val CF_BYPASS_USER_AGENT = "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36"
 const val vidzeeApi = "https://player.vidzee.wtf"
 const val kissKhAPI = "https://kisskh.nl"
 const val vidupAPI = "https://vidup.to"
