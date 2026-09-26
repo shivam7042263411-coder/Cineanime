@@ -187,7 +187,7 @@ object AnimePahe {
                 badge.contains("eng", true) || badge.contains("dub", true) ||
                 text.contains("eng", true) || text.contains("dub", true)
             ) "DUB" else "SUB"
-            if (resolveKwik(base, src, playUrl, "[$type]", quality, callback)) ok = true
+            if (resolveKwik(base, src, playUrl, "AnimePahe $type", "[$type]", quality, callback)) ok = true
         }
 
         doc.select("div#pickDownload > a").safeAmap { a ->
@@ -195,8 +195,8 @@ object AnimePahe {
             val text = a.text()
             val quality = qualityRegex.find(text)?.groupValues?.getOrNull(2)
                 ?.toIntOrNull() ?: Qualities.Unknown.value
-            val type = if (text.contains("eng", true)) "[Download] [DUB]" else "[Download] [SUB]"
-            if (resolveKwik(base, href, playUrl, type, quality, callback)) ok = true
+            val type = if (text.contains("eng", true)) "DUB" else "SUB"
+            if (resolveKwik(base, href, playUrl, "AnimePahe Download $type", "[Download] [$type]", quality, callback)) ok = true
         }
 
         subtitleCallback.let { } // AnimePahe provides no subtitles (reference-verified).
@@ -204,10 +204,14 @@ object AnimePahe {
     }
 
     // ── Kwik resolver (adapted; PACKER unpack + source regexes) ───────────
+    // `source` is deliberately distinct per category (SUB/DUB/Download):
+    // CloudStream's Profile → Edit source priority is keyed on
+    // ExtractorLink.source, so each category is independently reorderable.
     private suspend fun resolveKwik(
         paheBase: String,
         kwikUrl: String,
         referer: String,
+        source: String,
         label: String,
         quality: Int,
         callback: (ExtractorLink) -> Unit
@@ -241,7 +245,7 @@ object AnimePahe {
         val isM3u8 = mediaUrl.contains(".m3u8")
         callback(
             newExtractorLink(
-                "AnimePahe",
+                source,
                 "AnimePahe $label",
                 mediaUrl,
                 INFER_TYPE
@@ -259,7 +263,7 @@ object AnimePahe {
                 .substringBeforeLast("/") + "?file=" + URLEncoder.encode(fileName, "UTF-8")
             callback(
                 newExtractorLink(
-                    "AnimePahe",
+                    source,
                     "AnimePahe $label [Download]",
                     mp4Url,
                     ExtractorLinkType.VIDEO

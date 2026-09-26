@@ -6,6 +6,7 @@ import com.lagradost.api.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
+import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.LoadResponse.Companion.addAniListId
 import com.lagradost.cloudstream3.LoadResponse.Companion.addMalId
 import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
@@ -76,7 +77,12 @@ class CineAnimeProvider : MainAPI() {
             CineAnimeRef(anilistId = media.id, malId = media.idMal).toJson(),
             TvType.Anime,
         ) {
-            this.posterUrl = media.coverImage?.extraLarge ?: media.coverImage?.large
+            // AniList covers are reliable; banner is a cheap last resort.
+            // Per-item TMDB lookups are deliberately NOT done here (20+
+            // extra API calls per catalog page for negligible gain).
+            this.posterUrl = media.coverImage?.extraLarge
+                ?: media.coverImage?.large
+                ?: media.bannerImage?.takeIf { it.isNotBlank() }
             this.score = media.averageScore?.let { Score.from10(it / 10.0) }
         }
     }
@@ -101,13 +107,16 @@ class CineAnimeProvider : MainAPI() {
                 }
             }
         """.trimIndent()
+        // NOTE: AniList ignores *omitted* variables but treats an explicit
+        // `"status": null` as a filter matching nothing (verified: 0 results
+        // for catalog AND search). Nulls must be omitted, not sent.
         val variables = mutableMapOf<String, Any?>(
             "page" to page,
             "perPage" to perPage,
-            "sort" to sort?.let { listOf(it) },
-            "status" to status,
-            "search" to search,
         )
+        sort?.let { variables["sort"] = listOf(it) }
+        status?.let { variables["status"] = it }
+        search?.let { variables["search"] = it }
         val res = runCatching {
             app.post(anilistAPI, json = mapOf("query" to query, "variables" to variables))
                 .parsedSafe<CineAnimePageResponse>()
@@ -219,6 +228,108 @@ class CineAnimeProvider : MainAPI() {
         val path = detail?.optString("poster_path")?.takeIf { it.isNotBlank() && it != "null" }
             ?: return null
         return if (path.startsWith("/")) "https://image.tmdb.org/t/p/original$path" else path
+    }
+
+    // ── Per-episode metadata from ani.zip (keyed by episode number) ───────
+    // ani.zip is the only source with a COMPLETE number-keyed episode map
+    // (titles, overviews, images, air dates). AniList `streamingEpisodes` is
+    // only a partial reverse-chronological window and must never be treated
+    // as the episode list.
+    private suspend fun fetchAnizip(anilistId: Int, malId: Int?): CineAnimeAnizip? {
+        val urls = listOfNotNull(
+            "$anizipAPI/mappings?anilist_id=$anilistId",
+            malId?.let { "$anizipAPI/mappings?mal_id=$it" },
+        )
+        for (url in urls) {
+            val parsed = runCatching {
+                tryParseJson<CineAnimeAnizip>(app.get(url).text)
+            }.getOrNull()
+            if (!parsed?.episodes.isNullOrEmpty()) return parsed
+        }
+        return null
+    }
+
+    private fun buildAnimeEpisodes(
+        anizip: CineAnimeAnizip?,
+        media: CineAnimeMedia,
+        anilistId: Int,
+        malId: Int?,
+        tmdbId: Int?,
+        tvdbId: Int?,
+        imdbId: String?,
+        titleEnglish: String?,
+        titleRomaji: String?,
+        score: Score?,
+        totalEpCount: Int?,
+    ): List<Episode> {
+        val numbered = anizip?.episodes
+            ?.mapNotNull { (k, v) -> k.toIntOrNull()?.let { it to v } }
+            ?.sortedBy { it.first }
+            .orEmpty()
+        if (numbered.isNotEmpty()) {
+            return numbered.map { (num, meta) ->
+                val epTitle = meta.title?.en?.takeIf { !it.isBlank() }
+                    ?: meta.title?.xjat?.takeIf { !it.isBlank() }
+                    ?: meta.title?.ja?.takeIf { !it.isBlank() }
+                newEpisode(
+                    CineAnimeEpisodeData(
+                        anilistId = anilistId,
+                        malId = malId,
+                        tmdbId = tmdbId,
+                        tvdbId = tvdbId,
+                        imdbId = imdbId,
+                        titleEnglish = titleEnglish,
+                        titleRomaji = titleRomaji,
+                        season = media.season,
+                        seasonYear = media.seasonYear,
+                        format = media.format,
+                        episode = num,
+                        absoluteEpisode = meta.absoluteEpisodeNumber ?: num,
+                        totalEpisodes = totalEpCount,
+                        episodeTitle = epTitle,
+                        thumbnail = meta.image?.takeIf { !it.isBlank() },
+                    ).toJson()
+                ) {
+                    // EpisodeAdapter renders "N. name"; null name renders
+                    // "Episode N". Never synthesize a title.
+                    this.name = epTitle
+                    this.season = meta.seasonNumber ?: 1
+                    this.episode = num
+                    this.posterUrl = meta.image?.takeIf { !it.isBlank() }
+                    this.description = meta.overview?.takeIf { !it.isBlank() }
+                    this.score = score
+                    this.runTime = meta.runtime ?: meta.length
+                    addDate(meta.airDate)
+                }
+            }
+        }
+        // Fallback: bare numbered entries from the AniList count (never
+        // streamingEpisodes positions — that field is a partial window).
+        val count = totalEpCount?.takeIf { it > 0 } ?: 1
+        return (1..count).map { num ->
+            newEpisode(
+                CineAnimeEpisodeData(
+                    anilistId = anilistId,
+                    malId = malId,
+                    tmdbId = tmdbId,
+                    tvdbId = tvdbId,
+                    imdbId = imdbId,
+                    titleEnglish = titleEnglish,
+                    titleRomaji = titleRomaji,
+                    season = media.season,
+                    seasonYear = media.seasonYear,
+                    format = media.format,
+                    episode = num,
+                    absoluteEpisode = num,
+                    totalEpisodes = totalEpCount,
+                ).toJson()
+            ) {
+                this.name = null
+                this.season = 1
+                this.episode = num
+                this.score = score
+            }
+        }
     }
 
     // ── fanart.tv background (optional; null key/url/id => skip gracefully) ──
@@ -338,6 +449,11 @@ class CineAnimeProvider : MainAPI() {
             "load id=$anilistId mal=$malId tmdb=$tmdbId(via=$tmdbSource) tvdb=$tvdbId imdb=$imdbId"
         )
 
+        // Per-episode metadata (titles/overviews/images keyed by TRUE episode
+        // number). Fetched once here; also feeds the total count below.
+        val anizip = fetchAnizip(anilistId, malId)
+        val totalEpCount = anizip?.episodeCount ?: totalEpisodes
+
         if (isMovie) {
             val data = CineAnimeEpisodeData(
                 anilistId = anilistId,
@@ -350,7 +466,7 @@ class CineAnimeProvider : MainAPI() {
                 season = media.season,
                 seasonYear = media.seasonYear,
                 format = media.format,
-                totalEpisodes = totalEpisodes,
+                totalEpisodes = totalEpCount,
             ).toJson()
             return newMovieLoadResponse(displayTitle, url, TvType.AnimeMovie, data) {
                 this.posterUrl = poster
@@ -367,43 +483,22 @@ class CineAnimeProvider : MainAPI() {
             }
         }
 
-        // Episodes: AniList entries are per-season, so absolute == episode
-        // within this entry (no offsets invented). Titles/thumbnails come from
-        // streamingEpisodes when present; per-episode air dates are not
-        // reliably available and are therefore omitted (see Known Limitations).
-        val count = when {
-            totalEpisodes != null && totalEpisodes > 0 -> totalEpisodes
-            !media.streamingEpisodes.isNullOrEmpty() -> media.streamingEpisodes.size
-            else -> 1
-        }
-        val episodes = (1..count).map { num ->
-            val se = media.streamingEpisodes?.getOrNull(num - 1)
-            newEpisode(
-                CineAnimeEpisodeData(
-                    anilistId = anilistId,
-                    malId = malId,
-                    tmdbId = tmdbId,
-                    tvdbId = tvdbId,
-                    imdbId = imdbId,
-                    titleEnglish = titleEnglish,
-                    titleRomaji = titleRomaji,
-                    season = media.season,
-                    seasonYear = media.seasonYear,
-                    format = media.format,
-                    episode = num,
-                    absoluteEpisode = num,
-                    totalEpisodes = totalEpisodes,
-                    episodeTitle = se?.title?.takeIf { !it.isBlank() },
-                    thumbnail = se?.thumbnail?.takeIf { !it.isBlank() },
-                ).toJson()
-            ) {
-                this.name = se?.title?.takeIf { !it.isBlank() } ?: "Episode $num"
-                this.season = 1
-                this.episode = num
-                this.posterUrl = se?.thumbnail?.takeIf { !it.isBlank() }
-                this.score = score
-            }
-        }
+        // Episodes are built from ani.zip metadata keyed by TRUE episode
+        // number (never array position). Non-numeric keys (S1..Sn specials)
+        // are skipped, mirroring how CineSimkl drops Simkl "special" types.
+        val episodes = buildAnimeEpisodes(
+            anizip = anizip,
+            media = media,
+            anilistId = anilistId,
+            malId = malId,
+            tmdbId = tmdbId,
+            tvdbId = tvdbId,
+            imdbId = imdbId,
+            titleEnglish = titleEnglish,
+            titleRomaji = titleRomaji,
+            score = score,
+            totalEpCount = totalEpCount,
+        )
 
         return newAnimeLoadResponse(displayTitle, url, TvType.Anime) {
             addEpisodes(DubStatus.Subbed, episodes)
@@ -547,5 +642,28 @@ class CineAnimeProvider : MainAPI() {
 
     data class CineAnimeTmdbResult(
         @param:JsonProperty("id") val id: Int? = null,
+    )
+
+    data class CineAnimeAnizip(
+        @param:JsonProperty("episodeCount") val episodeCount: Int? = null,
+        @param:JsonProperty("episodes") val episodes: Map<String, CineAnimeAnizipEpisode>? = null,
+    )
+
+    data class CineAnimeAnizipEpisode(
+        @param:JsonProperty("title") val title: CineAnimeAnizipTitle? = null,
+        @param:JsonProperty("overview") val overview: String? = null,
+        @param:JsonProperty("image") val image: String? = null,
+        @param:JsonProperty("absoluteEpisodeNumber") val absoluteEpisodeNumber: Int? = null,
+        @param:JsonProperty("seasonNumber") val seasonNumber: Int? = null,
+        @param:JsonProperty("episodeNumber") val episodeNumber: Int? = null,
+        @param:JsonProperty("airDate") val airDate: String? = null,
+        @param:JsonProperty("runtime") val runtime: Int? = null,
+        @param:JsonProperty("length") val length: Int? = null,
+    )
+
+    data class CineAnimeAnizipTitle(
+        @param:JsonProperty("en") val en: String? = null,
+        @param:JsonProperty("x-jat") val xjat: String? = null,
+        @param:JsonProperty("ja") val ja: String? = null,
     )
 }
