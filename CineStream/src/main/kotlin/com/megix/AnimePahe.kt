@@ -54,6 +54,17 @@ object AnimePahe {
         "https://animepahe.com",
     )
 
+    // 429 (rate limit) handling: hammering a limited IP extends the flag, so
+    // a 429 fails fast and parks all attempts behind a cooldown instead.
+    private const val RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000L
+    @Volatile private var rateLimitedUntil = 0L
+
+    private fun isRateLimited(): Boolean {
+        val limited = System.currentTimeMillis() < rateLimitedUntil
+        if (limited) Log.d("AnimePahe", "rate-limit cooldown active, backing off")
+        return limited
+    }
+
     private fun headers(base: String) = mapOf(
         "Cookie" to "__ddg2_=1234567890",
         // MUST be CF_BYPASS_USER_AGENT (the solver's agent): Cloudflare binds
@@ -90,6 +101,11 @@ object AnimePahe {
                 }
             }.getOrNull()
             last = res
+            if (res?.code == 429) {
+                Log.d("AnimePahe", "HTTP 429 rate limited, backing off: $url")
+                rateLimitedUntil = System.currentTimeMillis() + RATE_LIMIT_COOLDOWN_MS
+                return null
+            }
             val text = res?.text
             val challenged = res == null || text == null ||
                 text.contains("Just a moment") ||
@@ -137,7 +153,9 @@ object AnimePahe {
             callback(it)
         }
 
+        if (isRateLimited()) return false
         for (base in mirrors) {
+            if (isRateLimited()) return emitted > 0
             val searchCache = mutableMapOf<String, List<PaheSearchItem>>()
             suspend fun resultsFor(alias: String): List<PaheSearchItem> =
                 searchCache.getOrPut(alias) { searchPahe(base, alias) }
