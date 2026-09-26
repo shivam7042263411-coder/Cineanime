@@ -262,6 +262,7 @@ class CineAnimeProvider : MainAPI() {
         score: Score?,
         totalEpCount: Int?,
     ): List<Episode> {
+        val synonyms = media.synonyms?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
         val numbered = anizip?.episodes
             ?.mapNotNull { (k, v) -> k.toIntOrNull()?.let { it to v } }
             ?.sortedBy { it.first }
@@ -280,6 +281,7 @@ class CineAnimeProvider : MainAPI() {
                         imdbId = imdbId,
                         titleEnglish = titleEnglish,
                         titleRomaji = titleRomaji,
+                        synonyms = synonyms,
                         season = media.season,
                         seasonYear = media.seasonYear,
                         format = media.format,
@@ -316,6 +318,7 @@ class CineAnimeProvider : MainAPI() {
                     imdbId = imdbId,
                     titleEnglish = titleEnglish,
                     titleRomaji = titleRomaji,
+                    synonyms = synonyms,
                     season = media.season,
                     seasonYear = media.seasonYear,
                     format = media.format,
@@ -381,7 +384,7 @@ class CineAnimeProvider : MainAPI() {
                     description(asHtml: false)
                     coverImage { extraLarge large }
                     bannerImage genres format status episodes duration
-                    season seasonYear
+                    season seasonYear synonyms
                     startDate { year month day }
                     averageScore
                     streamingEpisodes { title thumbnail url site }
@@ -463,6 +466,7 @@ class CineAnimeProvider : MainAPI() {
                 imdbId = imdbId,
                 titleEnglish = titleEnglish,
                 titleRomaji = titleRomaji,
+                synonyms = media.synonyms?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() },
                 season = media.season,
                 seasonYear = media.seasonYear,
                 format = media.format,
@@ -551,6 +555,7 @@ class CineAnimeProvider : MainAPI() {
         val imdbId: String? = null,
         val titleEnglish: String? = null,
         val titleRomaji: String? = null,
+        val synonyms: List<String>? = null,
         val season: String? = null,
         val seasonYear: Int? = null,
         val format: String? = null,
@@ -601,6 +606,7 @@ class CineAnimeProvider : MainAPI() {
         @param:JsonProperty("seasonYear") val seasonYear: Int? = null,
         @param:JsonProperty("startDate") val startDate: CineAnimeDate? = null,
         @param:JsonProperty("averageScore") val averageScore: Int? = null,
+        @param:JsonProperty("synonyms") val synonyms: List<String>? = null,
         @param:JsonProperty("streamingEpisodes") val streamingEpisodes: List<CineAnimeStreamingEpisode>? = null,
     )
 
