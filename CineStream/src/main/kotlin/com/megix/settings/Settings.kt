@@ -50,6 +50,10 @@ object Settings {
 
     private val CLOUDFLARE_BYPASS_SITES = listOf(
         BypassDomain("anidao.to/search?q=hi", "AniDao"),
+        BypassDomain("animepahe.pw", "AnimePahe"),
+        BypassDomain("animepahe.org", "AnimePahe (mirror)"),
+        BypassDomain("animepahe.com", "AnimePahe (mirror)"),
+        BypassDomain("kwik.cx", "Kwik"),
     )
 
     fun getCloudflareBypassDomains(): List<BypassDomain> = CLOUDFLARE_BYPASS_SITES

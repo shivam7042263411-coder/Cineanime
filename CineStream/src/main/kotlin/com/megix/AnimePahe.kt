@@ -40,7 +40,9 @@ import java.net.URLEncoder
  * - Only kwik (.cx) hrefs are forwarded; no m=links API exists in this path.
  * - AnimePahe provides NO subtitles (verified: subtitleCallback never invoked).
  * - Cloudflare: reuses CineStreamExtractors.cfGet (CloudflareKiller + saved
- *   webview cookies) instead of the reference's WebView dialog.
+ *   webview cookies). First-run/interactive challenges are solved via
+ *   Settings → Cloudflare Bypass → AnimePahe/Kwik (visible WebView, cookies
+ *   saved per-domain and injected on later requests).
  *
  * AnimePahe never provides catalogs/search UI/metadata/artwork — those stay
  * on AniList/TMDB/fanart.tv in CineAnimeProvider.
