@@ -5,7 +5,9 @@ import com.lagradost.cloudstream3.utils.*
 import com.lagradost.api.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import com.lagradost.nicehttp.NiceResponse
 import kotlinx.coroutines.delay
+import org.jsoup.Jsoup
 import java.net.URLEncoder
 
 /**
@@ -56,6 +58,47 @@ object AnimePahe {
         "Accept-Language" to "en-US,en;q=0.9",
         "Referer" to "$base/",
     )
+
+    // First attempts often land on a Cloudflare challenge page ("Just a
+    // moment") until clearance warms up — users report success on manual
+    // retry 2-3. Absorb that inside one attempt: bounded retries with
+    // backoff when the body is a challenge (or not JSON where JSON is
+    // required). Exhaustion returns null -> fail closed, as before.
+    private suspend fun fetchWithRetry(
+        url: String,
+        headers: Map<String, String>,
+        expectJson: Boolean,
+        allowRedirects: Boolean = true,
+        attempts: Int = 3,
+        postData: Map<String, String>? = null,
+    ): NiceResponse? {
+        var last: NiceResponse? = null
+        repeat(attempts) { n ->
+            val res = runCatching {
+                if (postData != null) {
+                    CineStreamExtractors.cfPost(
+                        url, headers = headers,
+                        data = postData, allowRedirects = allowRedirects,
+                    )
+                } else {
+                    CineStreamExtractors.cfGet(url, headers, allowRedirects)
+                }
+            }.getOrNull()
+            last = res
+            val text = res?.text
+            val challenged = res == null || text == null ||
+                text.contains("Just a moment") ||
+                (expectJson && !text.trimStart().startsWith("{"))
+            if (!challenged) return res
+            Log.d("AnimePahe", "fetch retry ${n + 1}/$attempts challenged: $url")
+            delay(if (n == 0) 2000L else 4000L)
+        }
+        val text = last?.text
+        return last?.takeIf {
+            text != null && !text.contains("Just a moment") &&
+                (!expectJson || text.trimStart().startsWith("{"))
+        }
+    }
 
     private fun normalize(s: String?): String =
         s?.lowercase()?.replace(Regex("[^a-z0-9]"), "") ?: ""
@@ -177,12 +220,10 @@ object AnimePahe {
 
     private suspend fun searchPahe(base: String, alias: String): List<PaheSearchItem> {
         val q = URLEncoder.encode(alias, "UTF-8")
-        val json = runCatching {
-            CineStreamExtractors.cfGet(
-                "$base/api?m=search&l=8&q=$q",
-                headers(base)
-            ).text
-        }.getOrNull() ?: return emptyList()
+        val json = fetchWithRetry(
+            "$base/api?m=search&l=8&q=$q",
+            headers(base), expectJson = true,
+        )?.text ?: return emptyList()
         return tryParseJson<PaheSearchResponse>(json)?.data
             .orEmpty().filter { !it.session.isNullOrBlank() && !it.title.isNullOrBlank() }
     }
@@ -263,9 +304,9 @@ object AnimePahe {
         requireVerified: Boolean = false,
     ): Boolean {
         if (anilistId == null && malId == null) return !requireVerified
-        val doc = runCatching {
-            CineStreamExtractors.cfGet("$base/anime/$session", headers(base)).document
-        }.getOrNull() ?: return !requireVerified
+        val doc = fetchWithRetry(
+            "$base/anime/$session", headers(base), expectJson = false,
+        )?.text?.let { Jsoup.parse(it) } ?: return !requireVerified
         var sawId = false
         for (a in doc.select(".external-links > a")) {
             val href = a.attr("href")
@@ -302,12 +343,10 @@ object AnimePahe {
         session: String,
         page: Int
     ): PaheReleaseResponse? {
-        val json = runCatching {
-            CineStreamExtractors.cfGet(
-                "$base/api?m=release&id=$session&sort=episode_asc&page=$page",
-                headers(base)
-            ).text
-        }.getOrNull() ?: return null
+        val json = fetchWithRetry(
+            "$base/api?m=release&id=$session&sort=episode_asc&page=$page",
+            headers(base), expectJson = true,
+        )?.text ?: return null
         return tryParseJson<PaheReleaseResponse>(json)
     }
 
@@ -365,9 +404,8 @@ object AnimePahe {
         val epSession = ep.session?.takeIf { it.isNotBlank() } ?: return false
         val playUrl = "$base/play/$session/$epSession"
 
-        val doc = runCatching {
-            CineStreamExtractors.cfGet(playUrl, headers(base)).document
-        }.getOrNull() ?: return false
+        val doc = fetchWithRetry(playUrl, headers(base), expectJson = false)
+            ?.text?.let { Jsoup.parse(it) } ?: return false
 
         var ok = false
         val qualityRegex = Regex("""(.+?)\s+·\s+(\d{3,4})p""")
@@ -432,14 +470,11 @@ object AnimePahe {
         quality: Int,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val res = runCatching {
-            CineStreamExtractors.cfGet(
-                kwikUrl,
-                mapOf("referer" to "$paheBase/")
-            )
-        }.getOrNull() ?: return false
+        val res = fetchWithRetry(
+            kwikUrl, mapOf("referer" to "$paheBase/"), expectJson = false,
+        ) ?: return false
         val html = res.text
-        val doc = res.document
+        val doc = Jsoup.parse(html)
         val title = doc.title()
 
         val scripts = doc.select("script").map { it.data() }
@@ -511,14 +546,15 @@ object AnimePahe {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val noRedirect = false
-        val first = runCatching {
-            CineStreamExtractors.cfGet("$paheUrl/i", allowRedirects = noRedirect)
-        }.getOrNull() ?: return false
+        val first = fetchWithRetry(
+            "$paheUrl/i", emptyMap(), expectJson = false,
+            allowRedirects = noRedirect,
+        ) ?: return false
         val loc1 = first.headers["Location"] ?: first.headers["location"] ?: return false
         val kwikUrl = "https://" + loc1.substringAfterLast("https://")
-        val fRes = runCatching {
-            CineStreamExtractors.cfGet(kwikUrl, mapOf("referer" to "https://kwik.cx/"))
-        }.getOrNull() ?: return false
+        val fRes = fetchWithRetry(
+            kwikUrl, mapOf("referer" to "https://kwik.cx/"), expectJson = false,
+        ) ?: return false
         val fText = fRes.text
         val pm = Regex("""\("(\w+)",\d+,"(\w+)",(\d+),(\d+),\d+\)""").find(fText) ?: return false
         val decrypted = paheDecrypt(
@@ -535,18 +571,18 @@ object AnimePahe {
         var tries = 0
         var location: String? = null
         while (code != 302 && tries < 20) {
-            val post = runCatching {
-                CineStreamExtractors.cfPost(
-                    uri,
-                    headers = mapOf(
-                        "user-agent" to " Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-                        "referer" to kwikUrl,
-                        "cookie" to cookie,
-                    ),
-                    data = mapOf("_token" to tok),
-                    allowRedirects = false,
-                )
-            }.getOrNull() ?: return false
+            val post = fetchWithRetry(
+                uri,
+                headers = mapOf(
+                    "user-agent" to " Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    "referer" to kwikUrl,
+                    "cookie" to cookie,
+                ),
+                expectJson = false,
+                allowRedirects = false,
+                attempts = 2,
+                postData = mapOf("_token" to tok),
+            ) ?: return false
             code = post.code
             location = post.headers["Location"] ?: post.headers["location"]
             tries++
