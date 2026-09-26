@@ -118,8 +118,13 @@ internal object SettingsWebView {
             addView(SettingsWidgets.pillBtn(context, "💾 Save Cookies", Color.parseColor("#10B981"), Color.parseColor("#0B1120"), Color.parseColor("#059669")) {
                 val cookies = CookieManager.getInstance().getCookie(currentUrl)
                 if (!cookies.isNullOrBlank()) {
+                    // Save under the page's actual host AND the entry's original
+                    // host: after Cloudflare redirects the two can differ, and the
+                    // status row + request injection both key off the entry host.
+                    // Without this the save silently lands under the wrong key.
                     Settings.saveCookieForDomain(currentUrl, cookies)
-                    Log.d(TAG, "Saved cookies for $currentUrl: ${cookies.take(50)}...")
+                    Settings.saveCookieForDomain(targetUrl, cookies)
+                    Log.d(TAG, "Saved cookies for $currentUrl and $targetUrl: ${cookies.take(80)}...")
                     refreshCookieDisplay(currentUrl)
                     onCookiesChanged()
                     Toast.makeText(context, "Cookies saved!", Toast.LENGTH_SHORT).show()
