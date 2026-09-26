@@ -150,6 +150,7 @@ object AnimePahe {
             }
             var ranked = strict.values.sortedByDescending { it.score }
             var requireVerified = false
+            Log.d("AnimePahe", "strict pool for '$aliases' -> ${ranked.map { "${it.title}:${it.score}" }}")
             if (ranked.isEmpty()) {
                 val fallback = linkedMapOf<String, ScoredSession>()
                 for (alias in aliases) {
@@ -159,9 +160,13 @@ object AnimePahe {
                 }
                 ranked = fallback.values.sortedByDescending { it.score }.take(6)
                 requireVerified = true
+                Log.d("AnimePahe", "fallback pool -> ${ranked.map { "${it.title}:${it.score}" }}")
                 if (ranked.isNotEmpty()) {
                     Log.d("AnimePahe", "invoke: strict empty, fallback pool=${ranked.map { "${it.session}:${it.score}" }}")
                 }
+            }
+            if (ranked.isEmpty()) {
+                Log.d("AnimePahe", "invoke: no candidates at all, fail closed")
             }
             for (s in ranked) {
                 if (!verifySession(base, s.session, res.anilistId, res.malId, requireVerified)) continue
@@ -229,8 +234,10 @@ object AnimePahe {
             "$base/api?m=search&l=8&q=$q",
             headers(base), expectJson = true,
         )?.text ?: return emptyList()
-        return tryParseJson<PaheSearchResponse>(json)?.data
+        val items = tryParseJson<PaheSearchResponse>(json)?.data
             .orEmpty().filter { !it.session.isNullOrBlank() && !it.title.isNullOrBlank() }
+        Log.d("AnimePahe", "searchPahe '$alias' -> ${items.size}: ${items.take(8).map { it.title }}")
+        return items
     }
 
     // ── Tier 1: strict (exact/containment + marker gate + guards) ──────────
