@@ -21,7 +21,11 @@ import java.net.URLEncoder
  *
  * Findings carried over from the reference:
  * - AnimePahe search is title-only (no MAL/AniList id lookup); session is an
- *   opaque per-anime string. Matching is verified by year/episode-count guards.
+ *   opaque per-anime string. Matching is season-aware (generic markers:
+ *   Season/Part/Cour N, roman numerals, ordinals, Final) with year,
+ *   episode-count and movie-type guards; candidates are tried in rank order
+ *   until the episode resolves, and the pick is verified against the anime
+ *   page's anilist/mal external links when present.
  * - Episode numbers are used verbatim (absolute per anime entry, same
  *   per-season granularity as AniList, so AniList episode N == AnimePahe N).
  * - Only kwik (.cx) hrefs are forwarded; no m=links API exists in this path.
@@ -52,6 +56,10 @@ object AnimePahe {
     /**
      * Entry point called from CineAnimeProvider.loadLinks.
      * Returns true if at least one real ExtractorLink was emitted.
+     *
+     * Multi-season safety: every ranked candidate session is tried in order
+     * until its episode list actually contains the requested episode, so a
+     * wrong-season pick can never poison the result.
      */
     suspend fun invoke(
         res: CineAnimeProvider.CineAnimeEpisodeData,
@@ -76,11 +84,18 @@ object AnimePahe {
 
         for (base in mirrors) {
             for (title in titles) {
-                val session = findSession(base, title, res.seasonYear, res.totalEpisodes)
-                    ?: continue
-                if (resolveEpisode(base, session, epNum, subtitleCallback, counting)) {
-                    Log.d("AnimePahe", "invoke success via $base session=$session ep=$epNum emitted=$emitted")
-                    return emitted > 0
+                val sessions = findSessions(
+                    base, title,
+                    res.seasonYear, res.totalEpisodes,
+                    res.format,
+                    res.anilistId, res.malId,
+                )
+                for (session in sessions) {
+                    if (!verifySession(base, session, res.anilistId, res.malId)) continue
+                    if (resolveEpisode(base, session, epNum, subtitleCallback, counting)) {
+                        Log.d("AnimePahe", "invoke success via $base session=$session ep=$epNum emitted=$emitted")
+                        return emitted > 0
+                    }
                 }
             }
             // If search worked nowhere on this mirror, trying the next mirror
@@ -91,50 +106,118 @@ object AnimePahe {
         return emitted > 0
     }
 
-    // ── Anime lookup: title search + year/episode-count guards ────────────
-    private suspend fun findSession(
+    // ── Season markers (generic; no hardcoded titles) ─────────────────────
+    // "Season 2"->S2, "Part 2"->P2, "Cour 2"->C2, standalone "II"->S2,
+    // "2nd Season"->S2, "Final Season"->FINAL, bare "Season 1"->S1.
+    private fun seasonMarkers(title: String): Set<String> {
+        val t = title.lowercase()
+        val out = mutableSetOf<String>()
+        Regex("""season\s*(\d+)""").findAll(t).forEach { out += "S${it.groupValues[1]}" }
+        Regex("""\bpart\s*(\d+)""").findAll(t).forEach { out += "P${it.groupValues[1]}" }
+        Regex("""\bcour\s*(\d+)""").findAll(t).forEach { out += "C${it.groupValues[1]}" }
+        Regex("""(\d+)(?:st|nd|rd|th)\s*season""").findAll(t).forEach { out += "S${it.groupValues[1]}" }
+        val romans = mapOf("ii" to 2, "iii" to 3, "iv" to 4, "v" to 5, "vi" to 6)
+        Regex("""\b(ii|iii|iv|v|vi)\b""").findAll(t).forEach {
+            romans[it.groupValues[1]]?.let { n -> out += "S$n" }
+        }
+        if (Regex("""\bfinal\b""").containsMatchIn(t)) out += "FINAL"
+        return out
+    }
+
+    // A Season-1-style query (no markers) matches only unmarked candidates
+    // or explicit "Season 1". A marked query matches only the same markers.
+    // This kills the structural false positive where "X" ⊂ "X Season 2".
+    private fun markersCompatible(query: Set<String>, candidate: Set<String>): Boolean {
+        if (query.isEmpty()) return candidate.isEmpty() || candidate == setOf("S1")
+        return candidate == query
+    }
+
+    // ── Anime lookup: season-aware title search + guards ───────────────────
+    // Returns ranked candidate sessions (best first). Callers try each until
+    // its episode list contains the requested episode.
+    private suspend fun findSessions(
         base: String,
         title: String,
         year: Int?,
-        totalEpisodes: Int?
-    ): String? {
+        totalEpisodes: Int?,
+        format: String?,
+        anilistId: Int?,
+        malId: Int?,
+    ): List<String> {
         val q = URLEncoder.encode(title, "UTF-8")
         val json = runCatching {
             CineStreamExtractors.cfGet(
                 "$base/api?m=search&l=8&q=$q",
                 headers(base)
             ).text
-        }.getOrNull() ?: return null
+        }.getOrNull() ?: return emptyList()
         val results = tryParseJson<PaheSearchResponse>(json)?.data
             .orEmpty().filter { !it.session.isNullOrBlank() && !it.title.isNullOrBlank() }
-        if (results.isEmpty()) return null
+        if (results.isEmpty()) return emptyList()
 
         val normQuery = normalize(title)
-        var best: PaheSearchItem? = null
-        var bestScore = 0
-        for (c in results) {
+        val qMarkers = seasonMarkers(title)
+        val isMovie = format == "MOVIE"
+        val ranked = results.mapNotNull { c ->
             val normTitle = normalize(c.title)
-            var score = 0
-            score += when {
+            var score = when {
                 normTitle == normQuery -> 3
                 normTitle.contains(normQuery) || normQuery.contains(normTitle) -> 2
-                else -> 0
+                else -> return@mapNotNull null
             }
-            if (score == 0) continue
+            if (!markersCompatible(qMarkers, seasonMarkers(c.title ?: ""))) {
+                Log.d("AnimePahe", "findSessions: marker mismatch, skip '${c.title}' for '$title'")
+                return@mapNotNull null
+            }
+            if (qMarkers.isNotEmpty()) score += 1 // explicit season agreement
             if (year != null && c.year == year) score += 1
             if (totalEpisodes != null && c.episodes == totalEpisodes) score += 1
-            if (score > bestScore) {
-                bestScore = score
-                best = c
+            if (isMovie && c.type?.contains("movie", true) == true) score += 1
+            c.session!! to score
+        }.sortedByDescending { it.second }
+
+        if (ranked.isEmpty()) {
+            Log.d("AnimePahe", "findSessions: no confident match for '$title' on $base")
+        } else {
+            Log.d("AnimePahe", "findSessions: '$title' -> ${ranked.map { "${it.first}:${it.second}" }}")
+        }
+        return ranked.map { it.first }.distinct()
+    }
+
+    // ── Session verification via AnimePahe external links (best-effort) ────
+    // The anime page carries anilist/mal outbound links (same selector the
+    // reference uses for enrichment). A PROVEN mismatch rejects the session;
+    // absent links accept it (graceful — never fail-closed on layout drift).
+    private suspend fun verifySession(
+        base: String,
+        session: String,
+        anilistId: Int?,
+        malId: Int?,
+    ): Boolean {
+        if (anilistId == null && malId == null) return true
+        val doc = runCatching {
+            CineStreamExtractors.cfGet("$base/anime/$session", headers(base)).document
+        }.getOrNull() ?: return true
+        for (a in doc.select(".external-links > a")) {
+            val href = a.attr("href")
+            if (href.contains("anilist.co") && anilistId != null) {
+                val id = href.trimEnd('/').substringAfterLast("/").toIntOrNull()
+                if (id != null && id != anilistId) {
+                    Log.d("AnimePahe", "verifySession: anilist mismatch $id != $anilistId, reject $session")
+                    return false
+                }
+                if (id != null) return true
+            }
+            if (href.contains("myanimelist.net") && malId != null) {
+                val id = Regex("""/anime/(\d+)""").find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                if (id != null && id != malId) {
+                    Log.d("AnimePahe", "verifySession: mal mismatch $id != $malId, reject $session")
+                    return false
+                }
+                if (id != null) return true
             }
         }
-        // Require at least a containment match (score >= 2) — never blind-pick.
-        if (bestScore < 2) {
-            Log.d("AnimePahe", "findSession: no confident match for '$title' on $base")
-            return null
-        }
-        Log.d("AnimePahe", "findSession: '$title' -> '${best?.title}' session=${best?.session} score=$bestScore")
-        return best?.session
+        return true
     }
 
     // ── Episode resolution (verbatim absolute numbering) ──────────────────
