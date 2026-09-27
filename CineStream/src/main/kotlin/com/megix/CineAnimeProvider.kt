@@ -544,10 +544,10 @@ class CineAnimeProvider : MainAPI() {
 
     /**
      * Episode/movie payload for CineAnime.loadLinks (Phase 3+).
-     * episode = per-entry (per-season) number, the numbering AnimePahe uses.
-     * absoluteEpisode = franchise-absolute number from ani.zip (continues
-     * across sequel entries, e.g. sequel E1 = abs 50); kept for providers
-     * that need it, but NOT used for AnimePahe matching.
+     * episode = per-entry (per-season) number; absoluteEpisode = franchise-
+     * absolute number from ani.zip (continues across sequel entries).
+     * AnimePahe tries both (per-season first): its entries use either
+     * convention depending on the show.
      */
     data class CineAnimeEpisodeData(
         val anilistId: Int? = null,

@@ -140,11 +140,14 @@ object AnimePahe {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Per-season number first: AnimePahe numbers each season entry from 1,
-        // while absoluteEpisodeNumber continues the franchise count for
-        // sequels (e.g. sequel E1 = abs 50) and would never match. Identical
-        // for single-entry shows, so no behavior change there.
-        val epNum = res.episode ?: res.absoluteEpisode ?: 1
+        // AnimePahe is inconsistent across entries: some season sessions are
+        // numbered per-season from 1 (Mushoku S3: 1..14), others continue the
+        // franchise-absolute count (JJK S3: 48+ — verified on-site). Try both,
+        // per-season first (the historical common case). Session is already
+        // ID-verified, so either hit is the right episode. Identical values
+        // collapse to a single lookup.
+        val epNums = listOfNotNull(res.episode, res.absoluteEpisode).distinct()
+            .ifEmpty { listOf(1) }
         val aliases = buildAliases(res)
         if (aliases.isEmpty()) {
             Log.d("AnimePahe", "invoke: no usable titles in payload, aborting")
@@ -176,9 +179,11 @@ object AnimePahe {
             suspend fun attempt(ranked: List<ScoredSession>, requireVerified: Boolean): Boolean {
                 for (s in ranked) {
                     if (!verifySession(base, s.session, res.anilistId, res.malId, requireVerified)) continue
-                    if (resolveEpisode(base, s.session, epNum, subtitleCallback, counting)) {
-                        Log.d("AnimePahe", "invoke success via $base session=${s.session} ep=$epNum emitted=$emitted")
-                        return true
+                    for (num in epNums) {
+                        if (resolveEpisode(base, s.session, num, subtitleCallback, counting)) {
+                            Log.d("AnimePahe", "invoke success via $base session=${s.session} ep=$num emitted=$emitted")
+                            return true
+                        }
                     }
                 }
                 return false
@@ -203,7 +208,7 @@ object AnimePahe {
             // with the same titles is still worthwhile (mirror-specific index).
             if (emitted > 0) return true
         }
-        Log.d("AnimePahe", "invoke: no streams for ${aliases.firstOrNull()} ep=$epNum")
+        Log.d("AnimePahe", "invoke: no streams for ${aliases.firstOrNull()} ep=$epNums")
         return emitted > 0
     }
 
