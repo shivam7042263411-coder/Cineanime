@@ -140,7 +140,11 @@ object AnimePahe {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val epNum = res.absoluteEpisode ?: res.episode ?: 1
+        // Per-season number first: AnimePahe numbers each season entry from 1,
+        // while absoluteEpisodeNumber continues the franchise count for
+        // sequels (e.g. sequel E1 = abs 50) and would never match. Identical
+        // for single-entry shows, so no behavior change there.
+        val epNum = res.episode ?: res.absoluteEpisode ?: 1
         val aliases = buildAliases(res)
         if (aliases.isEmpty()) {
             Log.d("AnimePahe", "invoke: no usable titles in payload, aborting")
