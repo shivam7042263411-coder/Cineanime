@@ -209,10 +209,21 @@ object AnimePahe {
 
     private data class ScoredSession(val session: String, val title: String?, val score: Int)
 
-    // Alias pool: EN + romaji + native + synonyms, latin-signal filtered
-    // (non-latin synonyms can't match AnimePahe's index), deduped, capped.
+    // Alias pool: EN + romaji always; synonyms only if useful — sharing >=2
+    // content tokens with the EN/romaji base, or short codes (JJK3/SnK/AoT).
+    // Foreign-language synonyms return junk from AnimePahe's English-first
+    // index while multiplying request volume into rate limits, so they go.
+    // Latin-signal filtered, deduped, capped.
     private fun buildAliases(res: CineAnimeProvider.CineAnimeEpisodeData): List<String> {
-        val raw = listOfNotNull(res.titleEnglish, res.titleRomaji) + res.synonyms.orEmpty()
+        val english = res.titleEnglish?.trim().takeIf { !it.isNullOrBlank() }
+        val romaji = res.titleRomaji?.trim().takeIf { !it.isNullOrBlank() }
+        val baseTokens = listOfNotNull(english, romaji).flatMap { contentTokens(it) }.toSet()
+        fun usable(s: String): Boolean {
+            if (s == english || s == romaji) return true
+            if (normalize(s).length <= 6) return true
+            return (contentTokens(s) intersect baseTokens).size >= 2
+        }
+        val raw = listOfNotNull(english, romaji) + res.synonyms.orEmpty()
         val latin = raw.mapNotNull { s ->
             val t = s.trim()
             if (t.isBlank()) null
@@ -220,7 +231,8 @@ object AnimePahe {
             else null
         }
         val pool = latin.ifEmpty { raw.filter { it.isNotBlank() }.take(2) }
-        return pool.distinctBy { normalize(it) }.take(8)
+        return pool.filter { usable(it) }.distinctBy { normalize(it) }.take(8)
+            .ifEmpty { pool.distinctBy { normalize(it) }.take(2) }
     }
 
     // ── Season markers (generic; no hardcoded titles) ─────────────────────
