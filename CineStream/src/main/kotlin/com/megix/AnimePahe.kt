@@ -166,33 +166,35 @@ object AnimePahe {
                     strict.merge(s.session, s) { a, b -> if (b.score > a.score) b else a }
                 }
             }
-            var ranked = strict.values.sortedByDescending { it.score }
-            var requireVerified = false
-            Log.d("AnimePahe", "strict pool for '$aliases' -> ${ranked.map { "${it.title}:${it.score}" }}")
-            if (ranked.isEmpty()) {
-                val fallback = linkedMapOf<String, ScoredSession>()
-                for (alias in aliases) {
-                    for (s in scoreFallback(alias, resultsFor(alias), res)) {
-                        fallback.merge(s.session, s) { a, b -> if (b.score > a.score) b else a }
+            val strictRanked = strict.values.sortedByDescending { it.score }
+            Log.d("AnimePahe", "strict pool for '$aliases' -> ${strictRanked.map { "${it.title}:${it.score}" }}")
+
+            suspend fun attempt(ranked: List<ScoredSession>, requireVerified: Boolean): Boolean {
+                for (s in ranked) {
+                    if (!verifySession(base, s.session, res.anilistId, res.malId, requireVerified)) continue
+                    if (resolveEpisode(base, s.session, epNum, subtitleCallback, counting)) {
+                        Log.d("AnimePahe", "invoke success via $base session=${s.session} ep=$epNum emitted=$emitted")
+                        return true
                     }
                 }
-                ranked = fallback.values.sortedByDescending { it.score }.take(6)
-                requireVerified = true
-                Log.d("AnimePahe", "fallback pool -> ${ranked.map { "${it.title}:${it.score}" }}")
-                if (ranked.isNotEmpty()) {
-                    Log.d("AnimePahe", "invoke: strict empty, fallback pool=${ranked.map { "${it.session}:${it.score}" }}")
+                return false
+            }
+
+            // Fallback runs whenever strict yields no streams — not only when
+            // strict is empty (a wrong strict pick must not block fallback).
+            if (strictRanked.isNotEmpty() && attempt(strictRanked, false)) return true
+            val fallback = linkedMapOf<String, ScoredSession>()
+            for (alias in aliases) {
+                for (s in scoreFallback(alias, resultsFor(alias), res)) {
+                    fallback.merge(s.session, s) { a, b -> if (b.score > a.score) b else a }
                 }
             }
-            if (ranked.isEmpty()) {
+            val fbRanked = fallback.values.sortedByDescending { it.score }.take(6)
+            Log.d("AnimePahe", "fallback pool -> ${fbRanked.map { "${it.title}:${it.score}" }}")
+            if (fbRanked.isEmpty()) {
                 Log.d("AnimePahe", "invoke: no candidates at all, fail closed")
             }
-            for (s in ranked) {
-                if (!verifySession(base, s.session, res.anilistId, res.malId, requireVerified)) continue
-                if (resolveEpisode(base, s.session, epNum, subtitleCallback, counting)) {
-                    Log.d("AnimePahe", "invoke success via $base session=${s.session} ep=$epNum emitted=$emitted")
-                    return emitted > 0
-                }
-            }
+            if (fbRanked.isNotEmpty() && attempt(fbRanked, true)) return true
             // If search worked nowhere on this mirror, trying the next mirror
             // with the same titles is still worthwhile (mirror-specific index).
             if (emitted > 0) return true
@@ -235,6 +237,20 @@ object AnimePahe {
         return out
     }
 
+    // Marker-stripped form for "X Season 3: Subtitle" vs "X: Subtitle"
+    // comparisons. The marker gate below still applies — stripping alone
+    // never accepts (S1-vs-S2 stays blocked).
+    private fun stripMarkers(title: String): String {
+        var t = " ${title.lowercase()} "
+        t = t.replace(Regex("""\bseason\s*\d+"""), " ")
+        t = t.replace(Regex("""\bpart\s*\d+"""), " ")
+        t = t.replace(Regex("""\bcour\s*\d+"""), " ")
+        t = t.replace(Regex("""\b\d+(?:st|nd|rd|th)\s*season"""), " ")
+        t = t.replace(Regex("""\b(ii|iii|iv|v|vi)\b"""), " ")
+        t = t.replace(Regex("""\bfinal\b"""), " ")
+        return t.replace(Regex("[^a-z0-9]+"), "")
+    }
+
     // A Season-1-style query (no markers) matches only unmarked candidates
     // or explicit "Season 1". A marked query needs a marked candidate sharing
     // at least one marker (subset-tolerant: "Season 3: Part 1" matches a plain
@@ -266,13 +282,23 @@ object AnimePahe {
     ): List<ScoredSession> {
         val normQuery = normalize(alias)
         val qMarkers = seasonMarkers(alias)
+        val strippedQuery = stripMarkers(alias)
         val isMovie = res.format == "MOVIE"
         return results.mapNotNull { c ->
             val normTitle = normalize(c.title)
             var score = when {
                 normTitle == normQuery -> 3
                 normTitle.contains(normQuery) || normQuery.contains(normTitle) -> 2
-                else -> return@mapNotNull null
+                else -> {
+                    // Marker-stripped comparison: catches "X Season 3: Sub"
+                    // vs "X: Sub" in either direction. Gate still mandatory.
+                    val strippedTitle = stripMarkers(c.title ?: "")
+                    if (strippedQuery.isNotBlank() && strippedTitle.isNotBlank() &&
+                        (strippedQuery == strippedTitle ||
+                            strippedQuery.contains(strippedTitle) ||
+                            strippedTitle.contains(strippedQuery))
+                    ) 2 else return@mapNotNull null
+                }
             }
             if (!markersCompatible(qMarkers, seasonMarkers(c.title ?: ""))) {
                 Log.d("AnimePahe", "scoreStrict: marker mismatch, skip '${c.title}' for '$alias'")
@@ -288,7 +314,9 @@ object AnimePahe {
 
     // ── Tier 2: token-overlap fallback (arc/subtitle naming) ───────────────
     // Only reached when strict finds nothing. Candidates MUST still pass ID
-    // verification (requireVerified) — overlap alone never accepts.
+    // verification (requireVerified) — overlap alone never accepts. The gate
+    // stays loose on purpose (overlap >= 2): verification rejects wrong
+    // seasons deterministically, and the pool is capped.
     private val similarityStopwords = setOf(
         "season", "part", "cour", "arc", "the", "a", "an", "no", "ni", "na",
         "to", "o", "wa", "ga", "de", "la", "le", "les", "des", "der", "die",
@@ -309,13 +337,10 @@ object AnimePahe {
         return results.mapNotNull { c ->
             if (c.session.isNullOrBlank() || c.title.isNullOrBlank()) return@mapNotNull null
             val overlap = (contentTokens(c.title!!) intersect qTokens).size
-            if (overlap < 3) return@mapNotNull null
+            if (overlap < 2) return@mapNotNull null
             var score = overlap
-            val yearOk = res.seasonYear != null && c.year == res.seasonYear
-            val countOk = res.totalEpisodes != null && c.episodes == res.totalEpisodes
-            if (yearOk) score += 2
-            if (countOk) score += 2
-            if (!yearOk && !countOk && overlap < 5) return@mapNotNull null
+            if (res.seasonYear != null && c.year == res.seasonYear) score += 2
+            if (res.totalEpisodes != null && c.episodes == res.totalEpisodes) score += 2
             ScoredSession(c.session!!, c.title, score)
         }
     }
