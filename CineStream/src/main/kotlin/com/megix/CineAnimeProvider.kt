@@ -224,12 +224,6 @@ class CineAnimeProvider : MainAPI() {
         }.getOrNull()
     }
 
-    private fun tmdbPosterOf(detail: JSONObject?): String? {
-        val path = detail?.optString("poster_path")?.takeIf { it.isNotBlank() && it != "null" }
-            ?: return null
-        return if (path.startsWith("/")) "https://image.tmdb.org/t/p/original$path" else path
-    }
-
     // ── Per-episode metadata from ani.zip (keyed by episode number) ───────
     // ani.zip is the only source with a COMPLETE number-keyed episode map
     // (titles, overviews, images, air dates). AniList `streamingEpisodes` is
@@ -431,10 +425,11 @@ class CineAnimeProvider : MainAPI() {
         }
 
         // Artwork hierarchy (CineAnime-owned, independent of Simkl/TMDB):
-        // poster: TMDB -> AniList cover | logo: TMDB -> null |
+        // poster: AniList cover ONLY — must equal the catalog poster so that
+        // details and Continue Watching (which caches this poster) match it.
+        // TMDB still provides logo + ID enrichment below.
         // background: fanart.tv -> AniList banner -> AniList cover.
-        val poster = tmdbPosterOf(tmdbDetail)
-            ?: media.coverImage?.extraLarge
+        val poster = media.coverImage?.extraLarge
             ?: media.coverImage?.large
         val logo = fetchTmdbLogoUrl(
             tmdbApi,
