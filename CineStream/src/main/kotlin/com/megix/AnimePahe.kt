@@ -584,14 +584,20 @@ object AnimePahe {
         )
 
         // Download variant, same derivation as the reference (/stream/ -> /mp4/).
+        // It always carries the canonical Download identity (never the stream
+        // source), so Profile → Edit lists and orders it independently.
         if (mediaUrl.contains("/stream/")) {
             val fileName = title.substringBeforeLast(".mp4") + ".mp4"
             val mp4Url = mediaUrl.replace("/stream/", "/mp4/")
                 .substringBeforeLast("/") + "?file=" + URLEncoder.encode(fileName, "UTF-8")
+            val plainType = label.replace("[Download]", "").replace("[", "").replace("]", "").trim()
+                .takeIf { it.isNotBlank() } ?: "SUB"
+            val dlSource = "AnimePahe Download $plainType"
+            val dlName = dlSource + (if (quality > 0) " • ${quality}p" else "")
             callback(
                 newExtractorLink(
-                    source,
-                    "AnimePahe $label [Download]",
+                    dlSource,
+                    dlName,
                     mp4Url,
                     ExtractorLinkType.VIDEO
                 ) {
