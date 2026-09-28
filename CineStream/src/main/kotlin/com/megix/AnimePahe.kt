@@ -54,17 +54,6 @@ object AnimePahe {
         "https://animepahe.com",
     )
 
-    // 429 (rate limit) handling: hammering a limited IP extends the flag, so
-    // a 429 fails fast and parks all attempts behind a cooldown instead.
-    private const val RATE_LIMIT_COOLDOWN_MS = 5 * 60 * 1000L
-    @Volatile private var rateLimitedUntil = 0L
-
-    private fun isRateLimited(): Boolean {
-        val limited = System.currentTimeMillis() < rateLimitedUntil
-        if (limited) Log.d("AnimePahe", "rate-limit cooldown active, backing off")
-        return limited
-    }
-
     private fun headers(base: String) = mapOf(
         "Cookie" to "__ddg2_=1234567890",
         // MUST be CF_BYPASS_USER_AGENT (the solver's agent): Cloudflare binds
@@ -102,8 +91,7 @@ object AnimePahe {
             }.getOrNull()
             last = res
             if (res?.code == 429) {
-                Log.d("AnimePahe", "HTTP 429 rate limited, backing off: $url")
-                rateLimitedUntil = System.currentTimeMillis() + RATE_LIMIT_COOLDOWN_MS
+                Log.d("AnimePahe", "HTTP 429 rate limited: $url")
                 return null
             }
             val text = res?.text
@@ -160,9 +148,7 @@ object AnimePahe {
             callback(it)
         }
 
-        if (isRateLimited()) return false
         for (base in mirrors) {
-            if (isRateLimited()) return emitted > 0
             val searchCache = mutableMapOf<String, List<PaheSearchItem>>()
             suspend fun resultsFor(alias: String): List<PaheSearchItem> =
                 searchCache.getOrPut(alias) { searchPahe(base, alias) }
@@ -508,7 +494,6 @@ object AnimePahe {
                 ?.toIntOrNull() ?: Qualities.Unknown.value
             // DUB only from the anchor's own marker, never from the URL alone.
             val type = if (text.contains("eng", true)) "DUB" else "SUB"
-            val qualityName = if (quality > 0) " • ${quality}p" else ""
             val emitted = when {
                 href.contains("kwik") -> resolveKwik(
                     base, href, playUrl,
@@ -518,7 +503,7 @@ object AnimePahe {
                 href.contains("pahe.win") -> resolvePaheDownload(
                     href,
                     "AnimePahe Download $type",
-                    "AnimePahe Download $type$qualityName",
+                    "AnimePahe Download $type",
                     quality, callback,
                 )
                 else -> {
@@ -592,8 +577,9 @@ object AnimePahe {
                 .substringBeforeLast("/") + "?file=" + URLEncoder.encode(fileName, "UTF-8")
             val plainType = label.replace("[Download]", "").replace("[", "").replace("]", "").trim()
                 .takeIf { it.isNotBlank() } ?: "SUB"
+            // Player appends quality itself; keep names clean (no • 1080p).
             val dlSource = "AnimePahe Download $plainType"
-            val dlName = dlSource + (if (quality > 0) " • ${quality}p" else "")
+            val dlName = dlSource
             callback(
                 newExtractorLink(
                     dlSource,
