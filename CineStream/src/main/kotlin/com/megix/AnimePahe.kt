@@ -171,6 +171,14 @@ object AnimePahe {
                             return true
                         }
                     }
+                    // Movies only: release-list miss falls back to a direct
+                    // play link from the anime page. Series stay fail-closed.
+                    if (res.format == "MOVIE" &&
+                        resolveMovieDirect(base, s.session, subtitleCallback, counting)
+                    ) {
+                        Log.d("AnimePahe", "invoke success (movie direct) via $base session=${s.session} emitted=$emitted")
+                        return true
+                    }
                 }
                 return false
             }
@@ -464,8 +472,43 @@ object AnimePahe {
             return false
         }
         val epSession = ep.session?.takeIf { it.isNotBlank() } ?: return false
-        val playUrl = "$base/play/$session/$epSession"
+        return extractPlayLinks(base, "$base/play/$session/$epSession", subtitleCallback, callback)
+    }
 
+    // Movies whose release list yields no rows: fall back to a direct play
+    // link off the anime page (movies only — series keep fail-closed).
+    // Returns true if any link was emitted.
+    private suspend fun resolveMovieDirect(
+        base: String,
+        session: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val doc = fetchWithRetry(
+            "$base/anime/$session", headers(base), expectJson = false,
+        )?.text?.let { Jsoup.parse(it) } ?: return false
+        val href = doc.select("a[href*=/play/]")
+            .map { it.attr("href") }
+            .firstOrNull { it.contains("/play/") }
+            ?.takeIf { it.isNotBlank() } ?: run {
+                Log.d("AnimePahe", "resolveMovieDirect: no play link on anime page $session")
+                return false
+            }
+        val playUrl = when {
+            href.startsWith("http") -> href
+            href.startsWith("/") -> base + href
+            else -> "$base/$href"
+        }
+        Log.d("AnimePahe", "resolveMovieDirect: trying $playUrl")
+        return extractPlayLinks(base, playUrl, subtitleCallback, callback)
+    }
+
+    private suspend fun extractPlayLinks(
+        base: String,
+        playUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         val doc = fetchWithRetry(playUrl, headers(base), expectJson = false)
             ?.text?.let { Jsoup.parse(it) } ?: return false
 
