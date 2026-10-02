@@ -527,7 +527,9 @@ class CineAnimeProvider : MainAPI() {
     ): Boolean {
         val res = runCatching { parseJson<CineAnimeEpisodeData>(data) }.getOrNull()
             ?: return false
-        if ((res.absoluteEpisode ?: res.episode) == null) return false
+        // No episode-number gate here: movies legitimately carry none, and
+        // AnimePahe.invoke defaults them to episode 1. A missing-numbers
+        // early return once silently killed ALL movie playback.
         return AnimePahe.invoke(res, subtitleCallback, callback)
     }
 
