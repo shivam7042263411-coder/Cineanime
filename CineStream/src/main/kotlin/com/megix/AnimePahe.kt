@@ -54,6 +54,23 @@ object AnimePahe {
         "https://animepahe.com",
     )
 
+    // ── Session-lifetime caches (binge pacing) ────────────────────────
+    // Release-list pages, search results, and ID verifications are
+    // per-anime stable: re-fetching them on every episode tap is what
+    // trips AnimePahe's burst rate limit when binging. Cached in RAM
+    // only (cleared on app restart, so no stale-data risk across days).
+    // Only successful responses are stored — network failures always
+    // re-fetch next time and can never poison later episodes.
+    private val searchCache = java.util.concurrent.ConcurrentHashMap<String, List<PaheSearchItem>>()
+    private val verifyCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val releasePageCache = java.util.concurrent.ConcurrentHashMap<String, PaheReleaseResponse>()
+
+    // Simple bound so a long session can't grow these without limit.
+    private fun <K, V> MutableMap<K, V>.putBounded(key: K, value: V, max: Int = 500) {
+        if (size >= max) clear()
+        put(key, value)
+    }
+
     private fun headers(base: String) = mapOf(
         "Cookie" to "__ddg2_=1234567890",
         // MUST be CF_BYPASS_USER_AGENT (the solver's agent): Cloudflare binds
@@ -149,9 +166,19 @@ object AnimePahe {
         }
 
         for (base in mirrors) {
-            val searchCache = mutableMapOf<String, List<PaheSearchItem>>()
-            suspend fun resultsFor(alias: String): List<PaheSearchItem> =
-                searchCache.getOrPut(alias) { searchPahe(base, alias) }
+            suspend fun resultsFor(alias: String): List<PaheSearchItem> {
+                val key = "$base|$alias"
+                searchCache[key]?.let {
+                    Log.d("AnimePahe", "search cache hit '$alias' -> ${it.size}")
+                    return it
+                }
+                // Empty results are never cached: they may be a transient
+                // network failure, and caching them would poison later
+                // episodes with "no candidates".
+                val items = searchPahe(base, alias)
+                if (items.isNotEmpty()) searchCache.putBounded(key, items)
+                return items
+            }
 
             val strict = linkedMapOf<String, ScoredSession>()
             for (alias in aliases) {
@@ -374,6 +401,13 @@ object AnimePahe {
         requireVerified: Boolean = false,
     ): Boolean {
         if (anilistId == null && malId == null) return !requireVerified
+        val key = "$base|$session|$anilistId|$malId|$requireVerified"
+        verifyCache[key]?.let {
+            Log.d("AnimePahe", "verify cache hit $session -> $it")
+            return it
+        }
+        // Network failure bypasses the cache (never stored): a later
+        // episode must get a real verdict, not a cached outage.
         val doc = fetchWithRetry(
             "$base/anime/$session", headers(base), expectJson = false,
         )?.text?.let { Jsoup.parse(it) } ?: return !requireVerified
@@ -386,6 +420,7 @@ object AnimePahe {
                     sawId = true
                     if (id != anilistId) {
                         Log.d("AnimePahe", "verifySession: anilist mismatch $id != $anilistId, reject $session")
+                        verifyCache.putBounded(key, false)
                         return false
                     }
                 }
@@ -396,13 +431,16 @@ object AnimePahe {
                     sawId = true
                     if (id != malId) {
                         Log.d("AnimePahe", "verifySession: mal mismatch $id != $malId, reject $session")
+                        verifyCache.putBounded(key, false)
                         return false
                     }
                 }
             }
         }
         if (sawId) Log.d("AnimePahe", "verifySession: $session ID-verified")
-        return if (requireVerified) sawId else true
+        val verdict = if (requireVerified) sawId else true
+        verifyCache.putBounded(key, verdict)
+        return verdict
     }
 
     // ── Episode resolution (verbatim absolute numbering) ──────────────────
@@ -413,11 +451,18 @@ object AnimePahe {
         session: String,
         page: Int
     ): PaheReleaseResponse? {
+        val key = "$base|$session|$page"
+        releasePageCache[key]?.let {
+            Log.d("AnimePahe", "release page cache hit session=$session page=$page")
+            return it
+        }
         val json = fetchWithRetry(
             "$base/api?m=release&id=$session&sort=episode_asc&page=$page",
             headers(base), expectJson = true,
         )?.text ?: return null
-        return tryParseJson<PaheReleaseResponse>(json)
+        val parsed = tryParseJson<PaheReleaseResponse>(json) ?: return null
+        releasePageCache.putBounded(key, parsed)
+        return parsed
     }
 
     private suspend fun findPaheEpisode(
