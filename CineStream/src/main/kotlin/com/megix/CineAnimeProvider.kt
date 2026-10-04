@@ -12,6 +12,9 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addMalId
 import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
 import org.json.JSONObject
 import java.net.URLEncoder
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
  * CineAnime — AniList-powered anime provider (Phase 2).
@@ -68,26 +71,26 @@ class CineAnimeProvider : MainAPI() {
         return sort to status
     }
 
-    private fun mediaToSearchResponse(media: CineAnimeMedia): SearchResponse? {
+    private suspend fun mediaToSearchResponse(media: CineAnimeMedia): SearchResponse? {
         val title = media.title?.english?.takeIf { !it.isBlank() }
             ?: media.title?.romaji?.takeIf { !it.isBlank() }
             ?: media.title?.native?.takeIf { !it.isBlank() }
             ?: return null
+        // Resolved BEFORE the response builder: its trailing lambda is not
+        // a suspend scope. Simkl first (cached), AniList cover fallback,
+        // banner last resort.
+        val poster = fetchSimklPosterUrl(media.id, media.idMal)
+            ?: media.coverImage?.extraLarge
+            ?: media.coverImage?.large
+            ?: media.bannerImage?.takeIf { it.isNotBlank() }
         return newAnimeSearchResponse(
             title,
             CineAnimeRef(anilistId = media.id, malId = media.idMal).toJson(),
             TvType.Anime,
         ) {
-            // Catalog posters stay AniList: a Simkl lookup per item would
-            // add 20+ API calls per catalog page (rate-limit + latency).
-            // Simkl covers apply on the details page (one lookup per open),
-            // which also feeds Continue Watching and player art.
-            // AniList covers are reliable; banner is a cheap last resort.
-            // Per-item TMDB lookups are deliberately NOT done here (20+
-            // extra API calls per catalog page for negligible gain).
-            this.posterUrl = media.coverImage?.extraLarge
-                ?: media.coverImage?.large
-                ?: media.bannerImage?.takeIf { it.isNotBlank() }
+            // Failures inside the lookup resolve to null, never to a
+            // broken row.
+            this.posterUrl = poster
             this.score = media.averageScore?.let { Score.from10(it / 10.0) }
         }
     }
@@ -133,7 +136,11 @@ class CineAnimeProvider : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val (sort, status) = parseCatalog(request.data)
         val (media, hasNext) = fetchCatalogPage(page, sort, status, null)
-        val list = media.mapNotNull { mediaToSearchResponse(it) }
+        // Poster lookups run concurrently: 20 serial Simkl calls would
+        // stall every catalog page. Each lookup fails safe to null.
+        val list = coroutineScope {
+            media.map { m -> async { mediaToSearchResponse(m) } }.awaitAll().filterNotNull()
+        }
         return newHomePageResponse(
             HomePageList(request.name, list),
             hasNext = hasNext
@@ -145,10 +152,10 @@ class CineAnimeProvider : MainAPI() {
 
     override suspend fun search(query: String, page: Int): SearchResponseList? {
         val (media, hasNext) = fetchCatalogPage(page, null, null, query.takeIf { it.isNotBlank() })
-        return newSearchResponseList(
-            media.mapNotNull { mediaToSearchResponse(it) },
-            hasNext
-        )
+        val list = coroutineScope {
+            media.map { m -> async { mediaToSearchResponse(m) } }.awaitAll().filterNotNull()
+        }
+        return newSearchResponseList(list, hasNext)
     }
 
     override suspend fun search(query: String): List<SearchResponse>? =
@@ -229,13 +236,22 @@ class CineAnimeProvider : MainAPI() {
         }.getOrNull()
     }
 
-    // ── Simkl cover for the details page (covers only) ────────────────
+    // ── Simkl cover for posters (covers only) ───────────────────────────
     // Lookup by AniList/MAL id via /search/id (no title matching), then
     // build the poster URL with the same pattern CineSimklProvider uses
-    // (wsrv-proxied simkl.in medium webp). One lookup per details open —
-    // never per catalog item. Null on any failure: callers fall back to
-    // the AniList cover.
+    // (wsrv-proxied simkl.in medium webp). Results are cached in RAM so
+    // repeat catalog pages cost nothing. Null on any failure: callers fall
+    // back to the AniList cover. Only successes are cached — transient
+    // failures retry on the next page/open.
+    private val simklPosterCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private suspend fun fetchSimklPosterUrl(anilistId: Int?, malId: Int?): String? {
+        val cacheKey = when {
+            anilistId != null -> "a:$anilistId"
+            malId != null -> "m:$malId"
+            else -> return null
+        }
+        simklPosterCache[cacheKey]?.let { return it }
         val key = com.lagradost.cloudstream3.BuildConfig.SIMKL_CLIENT_ID
         suspend fun byId(param: String, id: Int): String? {
             val json = runCatching {
@@ -246,9 +262,13 @@ class CineAnimeProvider : MainAPI() {
             }.getOrNull().orEmpty().firstOrNull { !it.poster.isNullOrBlank() }?.poster
             return posterId?.let { "https://wsrv.nl/?url=https://simkl.in/posters/${it}_m.webp" }
         }
-        anilistId?.let { byId("anilist", it)?.let { url -> return url } }
-        malId?.let { byId("mal", it)?.let { url -> return url } }
-        return null
+        val url = anilistId?.let { byId("anilist", it) }
+            ?: malId?.let { byId("mal", it) }
+        if (url != null) {
+            if (simklPosterCache.size >= 500) simklPosterCache.clear()
+            simklPosterCache[cacheKey] = url
+        }
+        return url
     }
 
     private data class SimklIdLookup(
@@ -459,7 +479,7 @@ class CineAnimeProvider : MainAPI() {
         // poster: Simkl cover first (AniList covers are often low-res),
         // AniList cover fallback. This is the details poster, so Continue
         // Watching (which caches it) picks up Simkl covers too. Catalog
-        // rows intentionally keep AniList covers (see mediaToSearchResponse).
+        // rows use the same Simkl-first chain (cached, concurrent).
         // TMDB still provides logo + ID enrichment below.
         // background: fanart.tv -> AniList banner -> AniList cover.
         val poster = fetchSimklPosterUrl(anilistId, malId)
