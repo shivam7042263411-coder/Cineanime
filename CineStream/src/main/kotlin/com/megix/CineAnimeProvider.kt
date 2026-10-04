@@ -18,7 +18,8 @@ import java.net.URLEncoder
  *
  * Pipeline:
  *   AniList (catalog/search/identity/metadata)
- *     -> TMDB (poster + logo via ID bridge, never title-assumed)
+ *     -> Simkl (details poster/cover via ID lookup, AniList fallback)
+ *     -> TMDB (logo via ID bridge, never title-assumed)
  *     -> fanart.tv (details background, optional)
  *     -> episodes (numbering preserved for future AnimePahe phase)
  *
@@ -77,6 +78,10 @@ class CineAnimeProvider : MainAPI() {
             CineAnimeRef(anilistId = media.id, malId = media.idMal).toJson(),
             TvType.Anime,
         ) {
+            // Catalog posters stay AniList: a Simkl lookup per item would
+            // add 20+ API calls per catalog page (rate-limit + latency).
+            // Simkl covers apply on the details page (one lookup per open),
+            // which also feeds Continue Watching and player art.
             // AniList covers are reliable; banner is a cheap last resort.
             // Per-item TMDB lookups are deliberately NOT done here (20+
             // extra API calls per catalog page for negligible gain).
@@ -223,6 +228,32 @@ class CineAnimeProvider : MainAPI() {
                 .parsedSafe<CineAnimeTmdbSearch>()?.results?.firstOrNull()?.id
         }.getOrNull()
     }
+
+    // ── Simkl cover for the details page (covers only) ────────────────
+    // Lookup by AniList/MAL id via /search/id (no title matching), then
+    // build the poster URL with the same pattern CineSimklProvider uses
+    // (wsrv-proxied simkl.in medium webp). One lookup per details open —
+    // never per catalog item. Null on any failure: callers fall back to
+    // the AniList cover.
+    private suspend fun fetchSimklPosterUrl(anilistId: Int?, malId: Int?): String? {
+        val key = com.lagradost.cloudstream3.BuildConfig.SIMKL_CLIENT_ID
+        suspend fun byId(param: String, id: Int): String? {
+            val json = runCatching {
+                app.get("https://api.simkl.com/search/id?$param=$id&client_id=$key").text
+            }.getOrNull() ?: return null
+            val posterId = runCatching {
+                parseJson<List<SimklIdLookup>>(json)
+            }.getOrNull().orEmpty().firstOrNull { !it.poster.isNullOrBlank() }?.poster
+            return posterId?.let { "https://wsrv.nl/?url=https://simkl.in/posters/${it}_m.webp" }
+        }
+        anilistId?.let { byId("anilist", it)?.let { url -> return url } }
+        malId?.let { byId("mal", it)?.let { url -> return url } }
+        return null
+    }
+
+    private data class SimklIdLookup(
+        val poster: String? = null,
+    )
 
     // ── Per-episode metadata from ani.zip (keyed by episode number) ───────
     // ani.zip is the only source with a COMPLETE number-keyed episode map
@@ -425,11 +456,14 @@ class CineAnimeProvider : MainAPI() {
         }
 
         // Artwork hierarchy (CineAnime-owned, independent of Simkl/TMDB):
-        // poster: AniList cover ONLY — must equal the catalog poster so that
-        // details and Continue Watching (which caches this poster) match it.
+        // poster: Simkl cover first (AniList covers are often low-res),
+        // AniList cover fallback. This is the details poster, so Continue
+        // Watching (which caches it) picks up Simkl covers too. Catalog
+        // rows intentionally keep AniList covers (see mediaToSearchResponse).
         // TMDB still provides logo + ID enrichment below.
         // background: fanart.tv -> AniList banner -> AniList cover.
-        val poster = media.coverImage?.extraLarge
+        val poster = fetchSimklPosterUrl(anilistId, malId)
+            ?: media.coverImage?.extraLarge
             ?: media.coverImage?.large
         val logo = fetchTmdbLogoUrl(
             tmdbApi,
