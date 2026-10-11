@@ -415,6 +415,38 @@ class CineAnimeProvider : MainAPI() {
         }.getOrNull()
     }
 
+    // ── TMDB backdrop (landscape, w1280): the missing middle layer ──────
+    // fanart.tv often lacks newer/obscure anime, and the AniList banner
+    // may be absent too — leaving only the portrait cover, which the app
+    // stretches into the landscape slot (zoomed + blurry). TMDB backdrops
+    // are natively 1280px+ wide. Highest voted wins; null when absent.
+    private suspend fun fetchTmdbBackdropUrl(tmdbId: Int?, isMovie: Boolean): String? {
+        if (tmdbId == null) return null
+        val kind = if (isMovie) "movie" else "tv"
+        return runCatching {
+            val json = JSONObject(
+                app.get("$tmdbApi/$kind/$tmdbId/images?api_key=$tmdbKey").text
+            )
+            val arr = json.optJSONArray("backdrops") ?: return null
+            var bestPath: String? = null
+            var bestAvg = -1.0
+            var bestCnt = -1
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val p = o.optString("file_path").takeIf { it.isNotBlank() } ?: continue
+                if (p.endsWith(".svg", true)) continue
+                val avg = o.optDouble("vote_average", 0.0)
+                val cnt = o.optInt("vote_count", 0)
+                if (avg > bestAvg || (avg == bestAvg && cnt > bestCnt)) {
+                    bestAvg = avg
+                    bestCnt = cnt
+                    bestPath = p
+                }
+            }
+            bestPath?.let { "https://image.tmdb.org/t/p/w1280$it" }
+        }.getOrNull()
+    }
+
     // ── Details ──────────────────────────────────────────────────────────
     override suspend fun load(url: String): LoadResponse? {
         val ref = runCatching { parseJson<CineAnimeRef>(url) }.getOrNull()
@@ -481,6 +513,10 @@ class CineAnimeProvider : MainAPI() {
         // Watching (which caches it) picks up Simkl covers too. Catalog
         // rows use the same Simkl-first chain (cached, concurrent).
         // TMDB still provides logo + ID enrichment below.
+        // background: fanart.tv -> TMDB backdrop (landscape) -> AniList
+        // banner -> AniList cover. The TMDB layer exists because fanart.tv
+        // often lacks newer anime and the banner may be absent, which left
+        // only the portrait cover stretched into the landscape slot.
         // background: fanart.tv -> AniList banner -> AniList cover.
         val poster = fetchSimklPosterUrl(anilistId, malId)
             ?: media.coverImage?.extraLarge
@@ -493,6 +529,7 @@ class CineAnimeProvider : MainAPI() {
             "en"
         )
         val background = resolveFanartBackground(isMovie, tmdbId, tvdbId)
+            ?: fetchTmdbBackdropUrl(tmdbId, isMovie)
             ?: media.bannerImage?.takeIf { it.isNotBlank() }
             ?: media.coverImage?.extraLarge
 
