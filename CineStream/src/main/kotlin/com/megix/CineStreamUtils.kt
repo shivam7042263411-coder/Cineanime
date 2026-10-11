@@ -1008,7 +1008,20 @@ suspend fun fetchTmdbLogoUrl(
     best?.let { return urlOf(it) }
     bestSvg?.let { return urlOf(it) }
 
-    // No language match & no voted logos
+    // Anime and foreign titles often have only unvoted / non-English logos.
+    // Any logo still beats title text: first non-SVG in any language, then SVG.
+    for (i in 0 until logos.length()) {
+        val logo = logos.optJSONObject(i) ?: continue
+        if (path(logo).isBlank() || isSvg(logo)) continue
+        return urlOf(logo)
+    }
+    for (i in 0 until logos.length()) {
+        val logo = logos.optJSONObject(i) ?: continue
+        if (path(logo).isBlank()) continue
+        return urlOf(logo)
+    }
+
+    // No logos at all
     return null
 }
 
