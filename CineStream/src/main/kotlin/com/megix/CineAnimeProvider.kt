@@ -447,6 +447,46 @@ class CineAnimeProvider : MainAPI() {
         }.getOrNull()
     }
 
+    // ── fanart.tv logo fallback (hdtvlogo/clearlogo) ────────────────────
+    // TMDB has zero logos for some big titles (verified: One Piece), while
+    // fanart.tv holds several. Same key/ids as the background resolver,
+    // English preferred, likes as tiebreak. Null when absent.
+    private suspend fun resolveFanartLogoUrl(
+        isMovie: Boolean,
+        tmdbId: Int?,
+        tvdbId: Int?
+    ): String? {
+        val key = FANART_KEY.takeIf { it.isNotBlank() && it != "null" } ?: return null
+        val url = if (isMovie && tmdbId != null) {
+            "$fanartAPI/movies/$tmdbId?api_key=$key"
+        } else if (!isMovie && tvdbId != null) {
+            "$fanartAPI/tv/$tvdbId?api_key=$key"
+        } else return null
+        return runCatching {
+            val json = JSONObject(app.get(url).text)
+            val keys = if (isMovie) listOf("hdmovielogo", "movielogo")
+            else listOf("hdtvlogo", "clearlogo")
+            var bestUrl: String? = null
+            var bestScore = Int.MIN_VALUE
+            for (k in keys) {
+                val arr = json.optJSONArray(k) ?: continue
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val u = o.optString("url").takeIf { it.startsWith("http") } ?: continue
+                    val lang = o.optString("lang")
+                    val likes = o.optString("likes").toIntOrNull() ?: 0
+                    val langBonus = if (lang == "en" || lang.isBlank()) 10_000 else 0
+                    val score = langBonus + likes
+                    if (score > bestScore) {
+                        bestScore = score
+                        bestUrl = u
+                    }
+                }
+            }
+            bestUrl
+        }.getOrNull()
+    }
+
     // ── Details ──────────────────────────────────────────────────────────
     override suspend fun load(url: String): LoadResponse? {
         val ref = runCatching { parseJson<CineAnimeRef>(url) }.getOrNull()
@@ -527,7 +567,7 @@ class CineAnimeProvider : MainAPI() {
             if (isMovie) TvType.Movie else TvType.TvSeries,
             tmdbId,
             "en"
-        )
+        ) ?: resolveFanartLogoUrl(isMovie, tmdbId, tvdbId)
         val background = resolveFanartBackground(isMovie, tmdbId, tvdbId)
             ?: fetchTmdbBackdropUrl(tmdbId, isMovie)
             ?: media.bannerImage?.takeIf { it.isNotBlank() }
