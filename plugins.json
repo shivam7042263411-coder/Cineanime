@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 512,
+    "version": 513,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
     "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe)",
-    "fileSize": 783104,
+    "fileSize": 783108,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-4322c225cd5903d16a36963e2ed2478cdc23d6b4aca7cafcd6bec3f7edf2d93f"
+    "fileHash": "sha256-a2bfb890b401b57965ef3074735813ec3644a55d2e0f7b1931a0d7519b00a33b"
   }
 ]
