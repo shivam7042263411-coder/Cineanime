@@ -19,6 +19,11 @@ open class CineStream: Plugin() {
         // don't treat existing providers as new
         Settings.initSeenProviders()
 
+        // Warm Cloudflare clearance in the background at launch: restores
+        // persisted cookies and silently re-solves if stale, so playback
+        // never waits on a manual WebView solve.
+        CineStreamExtractors.warmCloudflareCookiesInBackground()
+
         if (getKey<Boolean>(Settings.PROVIDER_CINESTREAM) ?: true) {
             registerMainAPI(CineStreamProvider())
         }

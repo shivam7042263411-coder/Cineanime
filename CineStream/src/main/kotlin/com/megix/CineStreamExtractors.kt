@@ -38,6 +38,7 @@ import com.megix.settings.Settings
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.launch
 
 object CineStreamExtractors {
 
@@ -57,6 +58,32 @@ object CineStreamExtractors {
         runCatching { com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent }
             .getOrNull()?.takeIf { it.isNotBlank() }
             ?: CF_BYPASS_USER_AGENT
+
+    // ── Startup warm-up (no user interaction) ───────────────────────────
+    // Called once when the plugin loads. Re-seeds the WebView jar from the
+    // persisted cookies and fires a single silent probe at the primary
+    // AnimePahe mirror: if the stored clearance is stale, cfGet solves it
+    // in a background WebView and persists the fresh cookie. By the time
+    // the user taps play, a valid cf_clearance is already in place.
+    private val warmupStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun warmCloudflareCookiesInBackground() {
+        if (!Settings.cloudflareBypassEnabled()) return
+        if (!warmupStarted.compareAndSet(false, true)) return
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
+            .launch {
+            // Re-seed every bypass host from settings.
+            Settings.getCloudflareBypassDomains().forEach { site ->
+                runCatching { restoreSavedCookies("https://${site.domain}") }
+            }
+            // One probe only: mirrors share the same clearance semantics and
+            // extra probes would just add rate-limit pressure at launch.
+            runCatching {
+                cfGet("https://animepahe.pw/", mapOf("Accept-Language" to "en-US,en;q=0.9"))
+            }.onFailure { Log.d(CF_LOG_TAG, "warmup probe failed: ${it.message}") }
+            Log.d(CF_LOG_TAG, "warmCloudflareCookiesInBackground done")
+        }
+    }
 
     // CloudflareKiller's init wipes the WebView cookie jar. Re-seed our
     // persisted cookies right after construction so a still-valid
