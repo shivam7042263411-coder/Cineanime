@@ -68,7 +68,6 @@ object CineStreamExtractors {
     private val warmupStarted = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun warmCloudflareCookiesInBackground() {
-        if (!Settings.cloudflareBypassEnabled()) return
         if (!warmupStarted.compareAndSet(false, true)) return
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
             .launch {
@@ -173,7 +172,15 @@ object CineStreamExtractors {
         }
 
     private fun isCloudflarePage(response: NiceResponse): Boolean {
-        return response.code in listOf(403, 503)
+        if (response.code in listOf(403, 503)) return true
+        // Cloudflare also serves the interstitial with HTTP 200. Without this
+        // check the caller parses the challenge HTML as if it were data and
+        // the solver never runs.
+        val body = runCatching { response.text }.getOrNull() ?: return false
+        return body.contains("Just a moment") ||
+            body.contains("cf-chl") ||
+            body.contains("Attention Required! | Cloudflare") ||
+            body.contains("Enable JavaScript and cookies to continue")
     }
 
     private fun injectWebviewCookies(url: String, headers: Map<String, String>): Map<String, String> {
