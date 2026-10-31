@@ -17,7 +17,7 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.webkit.*
 import android.widget.*
-import com.megix.CF_BYPASS_USER_AGENT
+import com.megix.CineStreamExtractors
 import com.megix.settings.SettingsTheme.dp
 
 
@@ -54,8 +54,11 @@ internal object SettingsWebView {
         )
     }
 
-    // Shared CF_BYPASS_USER_AGENT (see ApiConstants.kt) for cookie validation
-    private const val SPOOF_JS = "if(!window.__csxSpoofed){window.__csxSpoofed=!0;let ua='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36';try{Object.defineProperty(navigator,'userAgent',{get:()=>ua});Object.defineProperty(navigator,'appVersion',{get:()=>ua.replace('Mozilla/','')})}catch(e){}if(!window.chrome)window.chrome={runtime:{},loadTimes:()=>{},csi:()=>{}}}"
+    // WebView now uses the device's real UA (see CineStreamExtractors.
+    // currentCfUserAgent), so spoofing navigator.userAgent to a different
+    // string only makes HTTP header and JS UA disagree — a Cloudflare
+    // signal. Only the window.chrome shim remains.
+    private const val SPOOF_JS = "if(!window.__csxSpoofed){window.__csxSpoofed=!0;if(!window.chrome)window.chrome={runtime:{},loadTimes:()=>{},csi:()=>{}}}"
 
     private const val GRAMCINEMA_INTERCEPT_JS = "if(!window.__csxTokenHooked){window.__csxTokenHooked=!0;const isReal=s=>s&&s.startsWith('eyJ0eXAiOi')&&!s.includes(' ');let _set=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(n,v){if(n.toLowerCase()==='authorization'){let t=v.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real XHR token!');try{Android.onToken(t)}catch(e){}}}return _set.apply(this,arguments)};let _f=window.fetch;if(_f)window.fetch=function(u,i){try{if(i&&i.headers){let h=i.headers,a=typeof h.get==='function'?h.get('Authorization'):(h.Authorization||h.authorization||'');if(a){let t=a.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real Fetch token!');Android.onToken(t)}}}}catch(e){}return _f.apply(this,arguments)}}"
 
@@ -144,7 +147,7 @@ internal object SettingsWebView {
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 useWideViewPort = true; loadWithOverviewMode = true
                 setSupportZoom(false); builtInZoomControls = false
-                userAgentString = CF_BYPASS_USER_AGENT
+                userAgentString = CineStreamExtractors.currentCfUserAgent()
                 setSupportMultipleWindows(true)
                 javaScriptCanOpenWindowsAutomatically = true
             }
@@ -328,7 +331,7 @@ internal object SettingsWebView {
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 useWideViewPort = true; loadWithOverviewMode = true
                 setSupportZoom(false); builtInZoomControls = false
-                userAgentString = CF_BYPASS_USER_AGENT
+                userAgentString = CineStreamExtractors.currentCfUserAgent()
 
                 // Enable Multi-Window Support for Google Sign-in popups
                 setSupportMultipleWindows(true)

@@ -47,6 +47,39 @@ object CineStreamExtractors {
     private val cfMutexMap = ConcurrentHashMap<String, Mutex>()
     private val cfKillerMap = ConcurrentHashMap<String, CloudflareKiller>()
 
+    // Cloudflare binds cf_clearance to the exact User-Agent that solved the
+    // challenge. The solver (CloudflareKiller) uses the device's real WebView
+    // UA and records it in WebViewResolver.webViewUserAgent, so requests must
+    // follow that value — a hardcoded UA gets challenged again even with a
+    // perfectly valid cookie. Before the first solve the constant is used;
+    // from then on the device UA wins and stays consistent.
+    fun currentCfUserAgent(): String =
+        runCatching { com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent }
+            .getOrNull()?.takeIf { it.isNotBlank() }
+            ?: CF_BYPASS_USER_AGENT
+
+    // CloudflareKiller's init wipes the WebView cookie jar. Re-seed our
+    // persisted cookies right after construction so a still-valid
+    // cf_clearance is reused instead of forcing a fresh solve.
+    private fun restoreSavedCookies(url: String) {
+        Settings.getCookieForDomain(url)?.takeIf { it.isNotBlank() }?.let { saved ->
+            runCatching { CookieManager.getInstance().setCookie(url, saved) }
+            Log.d(CF_LOG_TAG, "restoreSavedCookies: re-seeded jar for ${url.getHost()}")
+        }
+    }
+
+    // After a successful solve, persist the fresh cookies to settings.
+    // They otherwise live only in the killer's memory and die with the
+    // process — which is why users had to re-save cookies manually.
+    private fun persistSolvedCookies(url: String, killer: CloudflareKiller) {
+        val host = url.getHost()
+        val cookies = killer.savedCookies[host]?.takeIf { it.isNotEmpty() } ?: return
+        val cookie = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        if (!cookie.contains("cf_clearance")) return
+        Settings.saveCookieForDomain(url, cookie)
+        Log.d(CF_LOG_TAG, "persistSolvedCookies: saved cf_clearance for $host")
+    }
+
     suspend fun invokeAllSources(
         res: AllLoadLinksData,
         subtitleCallback: (SubtitleFile) -> Unit,
@@ -108,7 +141,9 @@ object CineStreamExtractors {
         cfMutexMap.getOrPut(url.getHost()) { Mutex() }
 
     private fun killerFor(url: String): CloudflareKiller =
-        cfKillerMap.getOrPut(url.getHost()) { CloudflareKiller() }
+        cfKillerMap.getOrPut(url.getHost()) {
+            CloudflareKiller().also { restoreSavedCookies(url) }
+        }
 
     private fun isCloudflarePage(response: NiceResponse): Boolean {
         return response.code in listOf(403, 503)
@@ -136,7 +171,7 @@ object CineStreamExtractors {
         Log.d(CF_LOG_TAG, "cfGet start: $url headers=$headers")
         val headersWithAgent = headers.toMutableMap()
         if (!headersWithAgent.containsKey("User-Agent")) {
-            headersWithAgent["User-Agent"] = CF_BYPASS_USER_AGENT
+            headersWithAgent["User-Agent"] = currentCfUserAgent()
         }
         val effectiveHeaders = injectWebviewCookies(url, headersWithAgent)
         Log.d(CF_LOG_TAG, "cfGet effective headers: User-Agent=${effectiveHeaders["User-Agent"]?.take(50)}...")
@@ -151,12 +186,12 @@ object CineStreamExtractors {
 
             Log.d(CF_LOG_TAG, "cfGet retryResponse code: ${retryResponse.code} for $url")
 
-            if (isCloudflarePage(retryResponse)) {
+            val finalResponse = if (isCloudflarePage(retryResponse)) {
                 cfKiller.savedCookies.clear()
                 app.get(url, interceptor = cfKiller, allowRedirects = allowRedirects)
-            } else {
-                retryResponse
-            }
+            } else retryResponse
+            persistSolvedCookies(url, cfKiller)
+            finalResponse
         }
     }
 
@@ -169,7 +204,7 @@ object CineStreamExtractors {
     ): NiceResponse {
         val headersWithAgent = headers.toMutableMap()
         if (!headersWithAgent.containsKey("User-Agent")) {
-            headersWithAgent["User-Agent"] = CF_BYPASS_USER_AGENT
+            headersWithAgent["User-Agent"] = currentCfUserAgent()
         }
         val effectiveHeaders = injectWebviewCookies(url, headersWithAgent)
         val response = app.post(url, headers = effectiveHeaders, data = data, json = json, allowRedirects = allowRedirects)
@@ -178,12 +213,12 @@ object CineStreamExtractors {
         return mutexFor(url).withLock {
             val cfKiller = killerFor(url)
             val retryResponse = app.post(url, data = data, json = json, interceptor = cfKiller, allowRedirects = allowRedirects)
-            if (isCloudflarePage(retryResponse)) {
+            val finalResponse = if (isCloudflarePage(retryResponse)) {
                 cfKiller.savedCookies.clear()
                 app.post(url, data = data, json = json, interceptor = cfKiller, allowRedirects = allowRedirects)
-            } else {
-                retryResponse
-            }
+            } else retryResponse
+            persistSolvedCookies(url, cfKiller)
+            finalResponse
         }
     }
 

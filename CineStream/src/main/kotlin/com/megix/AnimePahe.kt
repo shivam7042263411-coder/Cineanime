@@ -73,10 +73,11 @@ object AnimePahe {
 
     private fun headers(base: String) = mapOf(
         "Cookie" to "__ddg2_=1234567890",
-        // MUST be CF_BYPASS_USER_AGENT (the solver's agent): Cloudflare binds
-        // cf_clearance to the solving UA, and a mismatched UA gets challenged
-        // even with valid cookies (Phisher replays its solving UA likewise).
-        "User-Agent" to CF_BYPASS_USER_AGENT,
+        // MUST be the same UA that solved the challenge: Cloudflare binds
+        // cf_clearance to it, and a mismatched UA gets challenged even with
+        // valid cookies. currentCfUserAgent() returns the device WebView UA
+        // the solver actually uses (constant only as fallback).
+        "User-Agent" to CineStreamExtractors.currentCfUserAgent(),
         "Accept-Language" to "en-US,en;q=0.9",
         "Referer" to "$base/",
     )
