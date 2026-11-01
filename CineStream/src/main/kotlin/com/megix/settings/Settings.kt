@@ -21,6 +21,9 @@ object Settings {
     const val STREMIO_ADDONS_KEY       = "stremio_addons"
     const val NEW_PROVIDER_DEFAULT_ON  = "new_provider_default_on"
     const val CF_BYPASS_ENABLED        = "cloudflare_webview_bypass_enabled"
+    const val CF_AUTO_BYPASS_ON_LOAD   = "cloudflare_auto_bypass_on_load"
+
+    fun cloudflareAutoBypassOnLoad(): Boolean = getKey<Boolean>(CF_AUTO_BYPASS_ON_LOAD) ?: true
 
     private const val SEEN_PROVIDERS_KEY = "seen_providers"
     private const val PROVIDER_ORDER_KEY = "provider_order"

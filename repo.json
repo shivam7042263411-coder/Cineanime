@@ -1,9 +1,9 @@
 {
-  "name": "Cineanime Repo",
+  "name": "Cineanime Testing Repo",
   "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
-  "description": "Cineanime Repository (CineStream + CineAnime)",
+  "description": "Cineanime Testing Repository - v513 with Auto Cloudflare bypass WebView popup",
   "manifestVersion": 1,
   "pluginLists": [
-    "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/plugins.json"
+    "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/testing/plugins.json"
   ]
 }
