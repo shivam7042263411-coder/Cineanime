@@ -52,11 +52,13 @@ object CineStreamExtractors {
     // challenge. The solver (CloudflareKiller) uses the device's real WebView
     // UA and records it in WebViewResolver.webViewUserAgent, so requests must
     // follow that value — a hardcoded UA gets challenged again even with a
-    // perfectly valid cookie. Before the first solve the constant is used;
-    // from then on the device UA wins and stays consistent.
+    // perfectly valid cookie. That in-memory value dies with the process, so
+    // the solver's UA is persisted with the cookie and read back here; a
+    // saved clearance stays valid immediately after an app restart.
     fun currentCfUserAgent(): String =
         runCatching { com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent }
             .getOrNull()?.takeIf { it.isNotBlank() }
+            ?: Settings.getCfUserAgent()
             ?: CF_BYPASS_USER_AGENT
 
     // ── Startup warm-up (no user interaction) ───────────────────────────
@@ -104,6 +106,15 @@ object CineStreamExtractors {
         if (!cookie.contains("cf_clearance")) return
         Settings.saveCookieForDomain(url, cookie)
         Log.d(CF_LOG_TAG, "persistSolvedCookies: saved cf_clearance for $host")
+        // Persist the UA the clearance is bound to, so the saved cookie still
+        // validates after a process restart. Only the solver's real UA, never
+        // the fallback constant.
+        runCatching { com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent }
+            .getOrNull()?.takeIf { it.isNotBlank() }
+            ?.let {
+                Settings.saveCfUserAgent(it)
+                Log.d(CF_LOG_TAG, "persistSolvedCookies: saved solver UA ${it.take(80)}...")
+            }
     }
 
     suspend fun invokeAllSources(

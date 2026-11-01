@@ -69,6 +69,17 @@ object Settings {
     // ── Per-domain cookie persistence (Cloudflare bypass) ────
     private const val CF_COOKIE_KEY_PREFIX = "cf_cookie_"
 
+    // The User-Agent a cf_clearance was issued for. One global key is correct:
+    // every Cloudflare site uses the same device WebView UA.
+    private const val CF_USER_AGENT_KEY = "cf_user_agent"
+
+    fun saveCfUserAgent(userAgent: String) {
+        if (userAgent.isNotBlank()) setKey(CF_USER_AGENT_KEY, userAgent.trim())
+    }
+
+    fun getCfUserAgent(): String? =
+        getKey<String>(CF_USER_AGENT_KEY)?.takeIf { it.isNotBlank() }
+
     private fun cookieKeyForDomain(urlOrDomain: String): String {
         val domain = if (urlOrDomain.contains("://")) {
             Uri.parse(urlOrDomain).host?.lowercase()?.removePrefix("www.")

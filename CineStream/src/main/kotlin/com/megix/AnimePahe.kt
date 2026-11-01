@@ -159,6 +159,7 @@ object AnimePahe {
             Log.d("AnimePahe", "invoke: no usable titles in payload, aborting")
             return false
         }
+        Log.d("AnimePahe", "invoke aliases: ${aliases.joinToString { it.text }}${if (aliases.any { it.root }) " (root aliases require ID verification)" else ""}")
 
         var emitted = 0
         val counting: (ExtractorLink) -> Unit = {
@@ -183,16 +184,22 @@ object AnimePahe {
 
             val strict = linkedMapOf<String, ScoredSession>()
             for (alias in aliases) {
-                for (s in scoreStrict(alias, resultsFor(alias), res)) {
-                    strict.merge(s.session, s) { a, b -> if (b.score > a.score) b else a }
+                for (s in scoreStrict(alias.text, resultsFor(alias.text), res, alias.root)) {
+                    // Merge preserves the strictest verification requirement:
+                    // a session matched via a root alias stays verified even
+                    // if another alias also matched it loosely.
+                    strict.merge(s.session, s) { a, b ->
+                        val best = if (b.score > a.score) b else a
+                        best.copy(requiresVerify = a.requiresVerify || b.requiresVerify)
+                    }
                 }
             }
             val strictRanked = strict.values.sortedByDescending { it.score }
-            Log.d("AnimePahe", "strict pool for '$aliases' -> ${strictRanked.map { "${it.title}:${it.score}" }}")
+            Log.d("AnimePahe", "strict pool for '${aliases.joinToString { it.text }}' -> ${strictRanked.map { "${it.title}:${it.score}${if (it.requiresVerify) ":verify" else ""}" }}")
 
             suspend fun attempt(ranked: List<ScoredSession>, requireVerified: Boolean): Boolean {
                 for (s in ranked) {
-                    if (!verifySession(base, s.session, res.anilistId, res.malId, requireVerified)) continue
+                    if (!verifySession(base, s.session, res.anilistId, res.malId, requireVerified || s.requiresVerify)) continue
                     for (num in epNums) {
                         if (resolveEpisode(base, s.session, num, subtitleCallback, counting)) {
                             Log.d("AnimePahe", "invoke success via $base session=${s.session} ep=$num emitted=$emitted")
@@ -216,7 +223,7 @@ object AnimePahe {
             if (strictRanked.isNotEmpty() && attempt(strictRanked, false)) return true
             val fallback = linkedMapOf<String, ScoredSession>()
             for (alias in aliases) {
-                for (s in scoreFallback(alias, resultsFor(alias), res)) {
+                for (s in scoreFallback(alias.text, resultsFor(alias.text), res)) {
                     fallback.merge(s.session, s) { a, b -> if (b.score > a.score) b else a }
                 }
             }
@@ -230,18 +237,40 @@ object AnimePahe {
             // with the same titles is still worthwhile (mirror-specific index).
             if (emitted > 0) return true
         }
-        Log.d("AnimePahe", "invoke: no streams for ${aliases.firstOrNull()} ep=$epNums")
+        Log.d("AnimePahe", "invoke: no streams for ${aliases.firstOrNull()?.text} ep=$epNums")
         return emitted > 0
     }
 
-    private data class ScoredSession(val session: String, val title: String?, val score: Int)
+    private data class ScoredSession(
+        val session: String,
+        val title: String?,
+        val score: Int,
+        // Root-alias matches (OVA-like entries) are only accepted when the
+        // session's external links prove the entry's AniList/MAL id — the
+        // parent series shares the root title and must never be accepted.
+        val requiresVerify: Boolean = false,
+    )
+
+    private data class Alias(val text: String, val root: Boolean = false)
+
+    // Formats whose AnimePahe entries often don't surface under their long
+    // title (search is colon/length-sensitive, and l=8 crowding hides them).
+    private val ovaLikeFormats = setOf("OVA", "ONA", "SPECIAL", "TV_SHORT", "MUSIC")
+
+    // "Hyouka: What Should Be Had" -> "Hyouka". Only the head segment counts;
+    // a root shorter than 4 chars ("Re" from "Re:ZERO …") is too generic.
+    private fun rootOf(title: String?): String? {
+        val t = title?.trim().takeIf { !it.isNullOrBlank() } ?: return null
+        val root = t.split(":", " - ", " – ").first().trim()
+        return root.takeIf { it.length >= 4 && !it.equals(t, ignoreCase = true) }
+    }
 
     // Alias pool: EN + romaji always; synonyms only if useful — sharing >=2
     // content tokens with the EN/romaji base, or short codes (JJK3/SnK/AoT).
     // Foreign-language synonyms return junk from AnimePahe's English-first
     // index while multiplying request volume into rate limits, so they go.
     // Latin-signal filtered, deduped, capped.
-    private fun buildAliases(res: CineAnimeProvider.CineAnimeEpisodeData): List<String> {
+    private fun buildAliases(res: CineAnimeProvider.CineAnimeEpisodeData): List<Alias> {
         val english = res.titleEnglish?.trim().takeIf { !it.isNullOrBlank() }
         val romaji = res.titleRomaji?.trim().takeIf { !it.isNullOrBlank() }
         val baseTokens = listOfNotNull(english, romaji).flatMap { contentTokens(it) }.toSet()
@@ -258,8 +287,24 @@ object AnimePahe {
             else null
         }
         val pool = latin.ifEmpty { raw.filter { it.isNotBlank() }.take(2) }
-        return pool.filter { usable(it) }.distinctBy { normalize(it) }.take(8)
+        val base = pool.filter { usable(it) }.distinctBy { normalize(it) }.take(8)
             .ifEmpty { pool.distinctBy { normalize(it) }.take(2) }
+        if (res.format !in ovaLikeFormats) return base.map { Alias(it) }
+
+        // OVA-like entries: AnimePahe's index often misses the long, colon-
+        // heavy title (Hyouka: Motsubeki Mono wa), so the franchise root is
+        // searched as well. These matches are verified-only — the parent
+        // series shares the root and would otherwise be accepted.
+        val taken = base.map { normalize(it) }.toSet()
+        val roots = listOfNotNull(rootOf(res.titleEnglish), rootOf(res.titleRomaji))
+            .filter { normalize(it) !in taken }
+            .distinctBy { normalize(it) }
+            .take(2)
+            .map { Alias(it, root = true) }
+        if (roots.isNotEmpty()) {
+            Log.d("AnimePahe", "ova-like ${res.format}: root aliases ${roots.map { it.text }}")
+        }
+        return base.map { Alias(it) } + roots
     }
 
     // ── Season markers (generic; no hardcoded titles) ─────────────────────
@@ -322,6 +367,7 @@ object AnimePahe {
         alias: String,
         results: List<PaheSearchItem>,
         res: CineAnimeProvider.CineAnimeEpisodeData,
+        aliasIsRoot: Boolean = false,
     ): List<ScoredSession> {
         val normQuery = normalize(alias)
         val qMarkers = seasonMarkers(alias)
@@ -351,7 +397,7 @@ object AnimePahe {
             if (res.seasonYear != null && c.year == res.seasonYear) score += 1
             if (res.totalEpisodes != null && c.episodes == res.totalEpisodes) score += 1
             if (isMovie && c.type?.contains("movie", true) == true) score += 1
-            ScoredSession(c.session!!, c.title, score)
+            ScoredSession(c.session!!, c.title, score, requiresVerify = aliasIsRoot)
         }
     }
 
