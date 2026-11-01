@@ -1,0 +1,23 @@
+[
+  {
+    "name": "CineStream",
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents",
+    "manifestVersion": 1,
+    "pluginClassName": "com.megix.CineStream",
+    "version": 518,
+    "requiresResources": false,
+    "authors": ["megix"],
+    "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
+    "fileUrl": "https://github.com/shivam7042263411-coder/Cineanime/releases/download/v518/CineStream.cs3",
+    "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
+    "language": "en",
+    "status": 1,
+    "tvTypes": [
+      "TvSeries",
+      "Movie",
+      "AsianDrama",
+      "Anime",
+      "Torrent"
+    ]
+  }
+]
