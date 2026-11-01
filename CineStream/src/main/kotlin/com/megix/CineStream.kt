@@ -90,7 +90,7 @@ open class CineStream: Plugin() {
         val needsBypass = listOf("animepahe.pw", "animepahe.org", "animepahe.com")
             .none { Settings.hasSavedCookieForDomain(it) }
 
-        if (needsBypass && context is android.app.Activity) {
+        if (needsBypass) {
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
                     showCloudflareBypass(context, "https://animepahe.pw/") {
