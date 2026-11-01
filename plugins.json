@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/testing/CineStream.cs3",
     "status": 1,
-    "version": 1,
+    "version": 2,
     "name": "CineStream Testing",
     "internalName": "CineStreamTesting",
     "authors": [
       "megix"
     ],
-    "description": "TESTING BUILD v1 - Auto Cloudflare bypass WebView pops up automatically ~5 seconds after app opens (if no saved AnimePahe cookie). Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512). Cloudflare bypass features reverted to pre-v514 state.",
-    "fileSize": 783731,
+    "description": "TESTING BUILD v2 - Auto Cloudflare bypass WebView pops up ~10 seconds after app opens (if no saved AnimePahe cookie). Fixed: Activity context check, Throwable catch, all 3 mirrors checked, longer delay. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512). Cloudflare bypass features reverted to pre-v514 state.",
+    "fileSize": 783945,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-576b17e0cd0143c197dee375d53b862c2d6db5a998e2f82559d6c9b19c0b4fca"
+    "fileHash": "sha256-df159abeb328815b59db3e7eb87a4f75ceecbd3ce4d15ec5f9b52552a7391c05"
   }
 ]
