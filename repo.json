@@ -1,0 +1,9 @@
+{
+  "name": "Cineanime Repo",
+  "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
+  "description": "Cineanime Repository (CineStream + CineAnime)",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/plugins.json"
+  ]
+}
