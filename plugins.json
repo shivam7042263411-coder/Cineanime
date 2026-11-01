@@ -8,8 +8,8 @@
     "authors": [
       "megix"
     ],
-    "description": "TESTING BUILD v513 - Auto Cloudflare bypass WebView pops up automatically on plugin load (no manual settings needed). Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512). Cloudflare bypass features reverted to pre-v514 state.",
-    "fileSize": 783757,
+    "description": "TESTING BUILD v513 - Auto Cloudflare bypass WebView pops up automatically ~5 seconds after app opens (if no saved AnimePahe cookie). Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512). Cloudflare bypass features reverted to pre-v514 state.",
+    "fileSize": 783731,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-ce867f5ee0ea20aee6b6c575fe7cf219454053e6bd2ac501a9cc0059a8ebd80a"
+    "fileHash": "sha256-576b17e0cd0143c197dee375d53b862c2d6db5a998e2f82559d6c9b19c0b4fca"
   }
 ]

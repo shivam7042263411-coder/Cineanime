@@ -83,17 +83,23 @@ open class CineStream: Plugin() {
         }
 
         // ── Auto Cloudflare bypass on load ─────────────────────────
-        // If the user enabled auto-bypass and there's no saved AnimePahe
-        // cookie yet, pop the bypass WebView automatically so they can
-        // solve Cloudflare once — after that, saved cookies make playback
-        // work directly without ever opening settings manually.
+        // If auto-bypass is enabled and there's no saved AnimePahe cookie
+        // yet, pop the bypass WebView after the app settles so the user
+        // can solve Cloudflare once — after that, saved cookies make
+        // playback work directly without ever opening settings manually.
         if (Settings.cloudflareAutoBypassOnLoad() &&
-            !Settings.hasSavedCookieForDomain("animepahe.pw")) {
-            Handler(Looper.getMainLooper()).post {
-                showCloudflareBypass(context, "https://animepahe.pw/") {
-                    Log.d("CineStreamAutoBypass", "Cookies changed, dismissing bypass dialog")
+            !Settings.hasSavedCookieForDomain("animepahe.pw") &&
+            !Settings.hasSavedCookieForDomain("animepahe.org") &&
+            !Settings.hasSavedCookieForDomain("animepahe.com")) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    showCloudflareBypass(context, "https://animepahe.pw/") {
+                        Log.d("CineStreamAutoBypass", "Cookies changed, dismissing bypass dialog")
+                    }
+                } catch (e: Exception) {
+                    Log.e("CineStreamAutoBypass", "Failed to show bypass dialog: ${e.message}")
                 }
-            }
+            }, 5000) // 5 second delay so the Activity is fully ready for Dialogs
         }
     }
 }
