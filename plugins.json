@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 516,
+    "version": 513,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "v516: Proactive Cloudflare bypass probe before every playback. If cookies expire mid-session (20-40 min), bypass WebView pops up automatically when you tap play \u2014 no settings menu needed. Auto-saves and auto-dismisses. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512), TMDB key rotation (v513), UA persistence + HTTP-200 detection (v514), auto-popup (v515), context fix (v516).",
-    "fileSize": 786756,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). Cloudflare bypass features reverted to pre-v514 state. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB logo any-language fallback (v510), fanart.tv logo fallback (v512), TMDB backdrop middle layer (v511).",
+    "fileSize": 783108,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-40bf702ccb0dc25e56123319ada9f9f76c6402e2d74c46cba31a5b7d8607dfa4"
+    "fileHash": "sha256-a2bfb890b401b57965ef3074735813ec3644a55d2e0f7b1931a0d7519b00a33b"
   }
 ]
