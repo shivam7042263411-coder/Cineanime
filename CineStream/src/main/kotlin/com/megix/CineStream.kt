@@ -83,8 +83,8 @@ open class CineStream: Plugin() {
             }
         }
 
-        // Store context for Cloudflare bypass dialogs during playback
-        CineStreamExtractors.context = context.applicationContext
+        // Store context (Activity) for Cloudflare bypass dialogs during playback
+        CineStreamExtractors.context = context
 
         // ── Auto Cloudflare bypass popup ─────────────────────────────────────
         // If no AnimePahe cookies are saved yet, pop the bypass WebView so the

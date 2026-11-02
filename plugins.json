@@ -8,8 +8,8 @@
     "authors": [
       "megix"
     ],
-    "description": "v516: Proactive Cloudflare bypass probe before every playback. If cookies expire mid-session, bypass WebView pops up automatically \u2014 no settings menu needed. Also auto-saves and auto-dismisses. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512), TMDB key rotation (v513), UA persistence + HTTP-200 detection (v514), auto-popup (v515).",
-    "fileSize": 786802,
+    "description": "v516: Proactive Cloudflare bypass probe before every playback. If cookies expire mid-session (20-40 min), bypass WebView pops up automatically when you tap play \u2014 no settings menu needed. Auto-saves and auto-dismisses. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512), TMDB key rotation (v513), UA persistence + HTTP-200 detection (v514), auto-popup (v515), context fix (v516).",
+    "fileSize": 786756,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
