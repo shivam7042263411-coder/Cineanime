@@ -1,14 +1,14 @@
 [
   {
-    "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/testing/CineStream.cs3",
+    "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 4,
-    "name": "CineStream Testing",
-    "internalName": "CineStreamTesting",
+    "version": 515,
+    "name": "CineStream",
+    "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "TESTING BUILD v4 - Auto Cloudflare bypass WebView pops up automatically ~5 seconds after app opens (if no saved AnimePahe cookie). Includes cookie persistence (v514) + UA persistence + HTTP-200 challenge detection + background warm-up. Phisher-style auto-popup implemented from plugin side.",
+    "description": "v515: Auto Cloudflare bypass WebView popup on plugin load. Solve once, cookies persist across restarts. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512), TMDB key rotation (v513), UA persistence + HTTP-200 detection (v514), auto-popup (v515).",
     "fileSize": 785545,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
