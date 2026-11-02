@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 515,
+    "version": 516,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "v515: Auto Cloudflare bypass WebView popup on plugin load. Auto-saves cookies when cf_clearance detected. Auto-dismiss dialog after solve. HTTP-200 challenge detection. Background warm-up. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512), TMDB key rotation (v513), UA persistence + HTTP-200 detection (v514), auto-popup (v515).",
-    "fileSize": 784998,
+    "description": "v516: Proactive Cloudflare bypass probe before every playback. If cookies expire mid-session, bypass WebView pops up automatically \u2014 no settings menu needed. Also auto-saves and auto-dismisses. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB/fanart.tv artwork (v507-v512), TMDB key rotation (v513), UA persistence + HTTP-200 detection (v514), auto-popup (v515).",
+    "fileSize": 786802,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-87ade932b751ef9915ff8c6b283054bc0fbec773d640acd859f58dfbfa206a20"
+    "fileHash": "sha256-40bf702ccb0dc25e56123319ada9f9f76c6402e2d74c46cba31a5b7d8607dfa4"
   }
 ]

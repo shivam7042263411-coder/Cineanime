@@ -661,6 +661,9 @@ class CineAnimeProvider : MainAPI() {
         // No episode-number gate here: movies legitimately carry none, and
         // AnimePahe.invoke defaults them to episode 1. A missing-numbers
         // early return once silently killed ALL movie playback.
+        // Proactive Cloudflare bypass probe: if cookies expired mid-session,
+        // pop the WebView before attempting to load links.
+        CineStreamExtractors.probeAndResolveIfNeeded("https://animepahe.pw/")
         return AnimePahe.invoke(res, subtitleCallback, callback)
     }
 

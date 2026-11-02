@@ -5,6 +5,10 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.mvvm.safeApiCall
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.*
+import android.app.Activity
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.webkit.CookieManager
 import com.lagradost.nicehttp.NiceResponse
 import com.lagradost.api.Log
@@ -35,6 +39,7 @@ import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 
 import com.megix.settings.Settings
+import com.megix.settings.SettingsWebView.showCloudflareBypass
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -47,6 +52,10 @@ object CineStreamExtractors {
     // WebView User-Agent for Cloudflare cookie validation.
     private val cfMutexMap = ConcurrentHashMap<String, Mutex>()
     private val cfKillerMap = ConcurrentHashMap<String, CloudflareKiller>()
+
+    // Context stored at plugin load time so we can show the Cloudflare
+    // bypass WebView from anywhere (e.g. pre-flight probe before playback).
+    var context: Context? = null
 
     // Cloudflare binds cf_clearance to the exact User-Agent that solved the
     // challenge. The solver (CloudflareKiller) uses the device's real WebView
@@ -168,6 +177,27 @@ object CineStreamExtractors {
             body.contains("cf-chl") ||
             body.contains("Attention Required! | Cloudflare") ||
             body.contains("Enable JavaScript and cookies to continue")
+    }
+
+    // Proactive pre-flight probe: fires before every playback attempt.
+    // If Cloudflare challenges (cookies expired/invalid), pops the bypass
+    // WebView so the user can solve immediately — no manual settings needed.
+    suspend fun probeAndResolveIfNeeded(url: String = "https://animepahe.pw/"): Boolean {
+        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: probing $url")
+        val probe = runCatching { cfGet(url, mapOf(), allowRedirects = false) }.getOrNull()
+        if (probe != null && isCloudflarePage(probe)) {
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
+            val ctx = context ?: return false
+            if (ctx is Activity) {
+                Handler(Looper.getMainLooper()).post {
+                    showCloudflareBypass(ctx, url) {
+                        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: cookies refreshed via probe")
+                    }
+                }
+                return true
+            }
+        }
+        return false
     }
 
     private fun injectWebviewCookies(url: String, headers: Map<String, String>): Map<String, String> {
