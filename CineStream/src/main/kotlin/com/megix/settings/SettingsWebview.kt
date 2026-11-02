@@ -21,7 +21,6 @@ import com.megix.CF_BYPASS_USER_AGENT
 import com.megix.settings.SettingsTheme.dp
 
 
-//WebView login dialog for extracting authentication tokens.
 @SuppressLint("SetJavaScriptEnabled")
 internal object SettingsWebView {
 
@@ -54,10 +53,9 @@ internal object SettingsWebView {
         )
     }
 
-    // Shared CF_BYPASS_USER_AGENT (see ApiConstants.kt) for cookie validation
     private const val SPOOF_JS = "if(!window.__csxSpoofed){window.__csxSpoofed=!0;let ua='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36';try{Object.defineProperty(navigator,'userAgent',{get:()=>ua});Object.defineProperty(navigator,'appVersion',{get:()=>ua.replace('Mozilla/','')})}catch(e){}if(!window.chrome)window.chrome={runtime:{},loadTimes:()=>{},csi:()=>{}}}"
 
-    private const val GRAMCINEMA_INTERCEPT_JS = "if(!window.__csxTokenHooked){window.__csxTokenHooked=!0;const isReal=s=>s&&s.startsWith('eyJ0eXAiOi')&&!s.includes(' ');let _set=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(n,v){if(n.toLowerCase()==='authorization'){let t=v.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real XHR token!');try{Android.onToken(t)}catch(e){}}}return _set.apply(this,arguments)};let _f=window.fetch;if(_f)window.fetch=function(u,i){try{if(i&&i.headers){let h=i.headers,a=typeof h.get==='function'?h.get('Authorization'):(h.Authorization||h.authorization||'');if(a){let t=a.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real Fetch token!');Android.onToken(t)}}}}catch(e){}return _f.apply(this,arguments)}}"
+    private const val GRAMCINEMA_INTERCEPT_JS = "if(!window.__csxTokenHooked){window.__csxTokenHooked=!0;const isReal=s=>s&&t.startsWith('eyJ0eXAiOi')&&!s.includes(' ');let _set=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(n,v){if(n.toLowerCase()==='authorization'){let t=v.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real XHR token!');try{Android.onToken(t)}catch(e){}}}return _set.apply(this,arguments)};let _f=window.fetch;if(_f)window.fetch=function(u,i){try{if(i&&i.headers){let h=i.headers,a=typeof h.get==='function'?h.get('Authorization'):(h.Authorization||h.authorization||'');if(a){let t=a.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real Fetch token!');Android.onToken(t)}}}}catch(e){}return _f.apply(this,arguments)}}"
 
     private class TokenBridge(private val deliver: (String) -> Unit) {
         @JavascriptInterface
@@ -76,80 +74,70 @@ internal object SettingsWebView {
 
         var currentUrl = targetUrl
         var dialogRef: Dialog? = null
-        var cookiesSaved = false
 
-        // ── STATUS BAR ──────────────────────────────────────────
         val statusText = TextView(context).apply {
-            text = "Solving Cloudflare…"
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(theme.TEXT_PRIMARY)
-            setPadding(20.dp(context), 14.dp(context), 20.dp(context), 10.dp(context))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            id = View.generateViewId()
+            text = targetUrl; textSize = 10f; setTextColor(theme.TEXT_SECONDARY); setSingleLine(true)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        fun updateStatus(text: String, color: Int = theme.TEXT_PRIMARY) {
-            mainHandler.post {
-                statusText.text = text
-                statusText.setTextColor(color)
-            }
+        fun updateStatus(url: String) {
+            currentUrl = url
+            mainHandler.post { statusText.text = url }
         }
 
-        // ── Helper functions ────────────────────────────────────
-        fun refreshCookieDisplay(url: String) {
-            val cookies = CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }
-            Log.d(TAG, "Cloudflare bypass cookies for $url: ${cookies?.take(80)}")
+        val progressBar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 3.dp(context))
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#22C55E"))
+            max = 100; progress = 10
         }
 
-        fun checkAndSaveCookies(url: String) {
-            if (cookiesSaved) return
-            val cookies = CookieManager.getInstance().getCookie(url)
-                ?.takeIf { it.isNotBlank() }
-                ?: return
-            if (!cookies.contains("cf_clearance")) return
-
-            cookiesSaved = true
-            Settings.saveCookieForDomain(url, cookies)
-            Settings.saveCookieForDomain(targetUrl, cookies)
-            Log.d(TAG, "Auto-saved cf_clearance for $url")
-
-            updateStatus("Cookies saved!", Color.parseColor("#10B981"))
-
-            mainHandler.postDelayed({
-                dialogRef?.dismiss()
-                onCookiesChanged()
-                Toast.makeText(context, "Cloudflare solved — cookies saved", Toast.LENGTH_SHORT).show()
-            }, 1500)
-        }
-
-        // ── WEBVIEW ─────────────────────────────────────────────
         val webViewContainer = FrameLayout(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0, 1f
-            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+
+        val cookieText = TextView(context).apply {
+            text = "Cookies: <none>"
+            textSize = 11f; setTextColor(theme.TEXT_SECONDARY)
+            setPadding(16.dp(context), 6.dp(context), 16.dp(context), 6.dp(context))
+        }
+
+        fun refreshCookieDisplay(url: String) {
+            val cookies = CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() } ?: "<none>"
+            mainHandler.post {
+                cookieText.text = "Cookies: $cookies"
+            }
+            Log.d(TAG, "Cloudflare bypass cookies for $url: $cookies")
+        }
+
+        val cookieControls = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(16.dp(context), 6.dp(context), 16.dp(context), 6.dp(context))
+            addView(SettingsWidgets.pillBtn(context, "💾 Save Cookies", Color.parseColor("#10B981"), Color.parseColor("#0B1120"), Color.parseColor("#059669")) {
+                val cookies = CookieManager.getInstance().getCookie(currentUrl)
+                if (!cookies.isNullOrBlank()) {
+                    Settings.saveCookieForDomain(currentUrl, cookies)
+                    Settings.saveCookieForDomain(targetUrl, cookies)
+                    Log.d(TAG, "Saved cookies for $currentUrl and $targetUrl: ${cookies.take(80)}...")
+                    refreshCookieDisplay(currentUrl)
+                    onCookiesChanged()
+                    Toast.makeText(context, "Cookies saved!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "No cookies to save", Toast.LENGTH_SHORT).show()
+                }
+            })
         }
 
         val webView = WebView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             setBackgroundColor(Color.WHITE)
-            isFocusable = true
-            isFocusableInTouchMode = true
+            isFocusable = true; isFocusableInTouchMode = true
 
             settings.apply {
-                javaScriptEnabled = true
-                domStorageEnabled = true
+                javaScriptEnabled = true; domStorageEnabled = true
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                useWideViewPort = true
-                loadWithOverviewMode = true
-                setSupportZoom(false)
-                builtInZoomControls = false
+                useWideViewPort = true; loadWithOverviewMode = true
+                setSupportZoom(false); builtInZoomControls = false
                 userAgentString = CF_BYPASS_USER_AGENT
                 setSupportMultipleWindows(true)
                 javaScriptCanOpenWindowsAutomatically = true
@@ -159,26 +147,28 @@ internal object SettingsWebView {
 
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
-                    // Progress handled by status text
+                    progressBar.progress = newProgress
+                    progressBar.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
                 }
             }
 
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
-                    currentUrl = url
-                    updateStatus("Solving Cloudflare…", theme.TEXT_SECONDARY)
+                    updateStatus(url)
                     val savedCookie = Settings.getCookieForDomain(url)
                     if (!savedCookie.isNullOrBlank()) {
                         CookieManager.getInstance().setCookie(url, savedCookie)
-                        Log.d(TAG, "Loaded saved cookies for $url")
+                        Log.d(TAG, "Loaded saved cookies for $url: ${savedCookie.take(50)}...")
+                        Toast.makeText(context, "Loaded saved cookies", Toast.LENGTH_SHORT).show()
                     }
+                    Log.d(TAG, "Cloudflare bypass WebView started: $url")
                 }
 
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    updateStatus(url ?: targetUrl, theme.TEXT_SECONDARY)
-                    view?.evaluateJavascript(SPOOF_JS, null)
-                    refreshCookieDisplay(url ?: targetUrl)
-                    checkAndSaveCookies(url ?: targetUrl)
+                override fun onPageFinished(view: WebView, url: String) {
+                    updateStatus(url)
+                    view.evaluateJavascript(SPOOF_JS, null)
+                    refreshCookieDisplay(url)
+                    Log.d(TAG, "Cloudflare bypass WebView finished: $url")
                 }
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
@@ -187,39 +177,43 @@ internal object SettingsWebView {
 
         webViewContainer.addView(webView)
 
-        // ── TV D-pad touch cursor ───────────────────────────────
         val tvCursor = TvTouchCursor(context, webViewContainer, webView)
 
-        // ── TITLE BAR ───────────────────────────────────────────
         val titleBar = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(16.dp(context), 12.dp(context), 16.dp(context), 12.dp(context))
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(16.dp(context), 12.dp(context), 10.dp(context), 12.dp(context))
             background = theme.colorDrawable(theme.BG_CARD)
 
+            addView(SettingsWidgets.accentBar(context, Color.parseColor("#22C55E"), Color.parseColor("#16A34A")))
             addView(TextView(context).apply {
-                text = "Cloudflare Bypass"
-                textSize = 15f
-                setTypeface(null, Typeface.BOLD)
+                text = "🌐 Cloudflare Bypass"; textSize = 14f; setTypeface(null, Typeface.BOLD)
                 setTextColor(theme.TEXT_PRIMARY)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
-
-            addView(SettingsWidgets.pillBtn(context, "✕ Close", theme.TEXT_SECONDARY, theme.BG_CARD, Color.parseColor("#2A2D3E")) {
-                tvCursor.destroy()
-                webView.stopLoading()
-                webView.destroy()
-                dialogRef?.dismiss()
+            addView(SettingsWidgets.hSpacer(context, 8))
+            addView(SettingsWidgets.pillBtn(context, "🖱 TV Cursor", Color.parseColor("#22C55E"), theme.BG_CARD, Color.parseColor("#22C55E")) {
+                tvCursor.toggle()
+                Toast.makeText(
+                    context,
+                    if (tvCursor.isActive) "Touch cursor ON — D-pad to move, OK to tap" else "Touch cursor OFF",
+                    Toast.LENGTH_SHORT
+                ).show()
             })
+            addView(SettingsWidgets.hSpacer(context, 8))
+            addView(SettingsWidgets.pillBtn(context, "✕ Close", theme.TEXT_SECONDARY, theme.BG_CARD, Color.parseColor("#2A2D3E")) { dialogRef?.dismiss() })
         }
 
-        // ── ROOT LAYOUT ─────────────────────────────────────────
         val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = theme.colorDrawable(theme.BG_DARK)
-            addView(titleBar)
-            addView(statusText)
-            addView(webViewContainer)
+            orientation = LinearLayout.VERTICAL; background = theme.colorDrawable(theme.BG_DARK)
+            addView(titleBar); addView(progressBar); addView(webViewContainer)
+            addView(cookieControls)
+            addView(cookieText)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(16.dp(context), 6.dp(context), 16.dp(context), 8.dp(context))
+                background = theme.colorDrawable(theme.BG_CARD)
+                addView(statusText)
+            })
         }
 
         dialogRef = object : Dialog(context, android.R.style.Theme_Black_NoTitleBar_Fullscreen) {
@@ -235,14 +229,11 @@ internal object SettingsWebView {
                 return super.dispatchKeyEvent(event)
             }
         }.apply {
-            requestWindowFeature(Window.FEATURE_NO_TITLE)
-            setContentView(root)
-            setCancelable(true)
+            requestWindowFeature(Window.FEATURE_NO_TITLE); setContentView(root); setCancelable(true)
             setOnDismissListener {
                 tvCursor.destroy()
-                webView.stopLoading()
-                webView.destroy()
-                if (!cookiesSaved) onCookiesChanged()
+                webView.stopLoading(); webView.destroy()
+                onCookiesChanged()
             }
             window?.apply {
                 setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
