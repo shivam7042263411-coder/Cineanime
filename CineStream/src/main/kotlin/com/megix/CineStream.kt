@@ -1,11 +1,16 @@
 package com.megix
 
+import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKey
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
 import com.megix.settings.Settings
+import com.megix.settings.SettingsWebView.showCloudflareBypass
 import kotlinx.coroutines.runBlocking
 
 @CloudstreamPlugin
@@ -76,6 +81,25 @@ open class CineStream: Plugin() {
             Settings.showSettingsDialog(ctx) {
                 MainActivity.reloadHomeEvent.invoke(true)
             }
+        }
+
+        // ── Auto Cloudflare bypass popup ─────────────────────────────────────
+        // If no AnimePahe cookies are saved yet, pop the bypass WebView so the
+        // user can solve Cloudflare once. After that, saved cookies restore
+        // automatically on every launch and playback works directly.
+        val needsBypass = listOf("animepahe.pw", "animepahe.org", "animepahe.com")
+            .none { Settings.hasSavedCookieForDomain(it) }
+
+        if (needsBypass && context is Activity) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    showCloudflareBypass(context, "https://animepahe.pw/") {
+                        Log.d("CineStreamAutoBypass", "Cookies saved via bypass dialog")
+                    }
+                } catch (e: Throwable) {
+                    Log.e("CineStreamAutoBypass", "Failed to show bypass dialog: ${e.message}")
+                }
+            }, 5000) // 5s delay so the Activity is fully ready for Dialogs
         }
     }
 }
