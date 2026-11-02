@@ -1,6 +1,6 @@
 import org.jetbrains.kotlin.konan.properties.Properties
 
-version = 518
+version = 514
 android {
     defaultConfig {
         val properties = Properties()
@@ -21,6 +21,10 @@ cloudstream {
     description = "One stop solution for Movies, Series, Anime, AsianDrama and Torrents"
     authors = listOf("megix")
     status = 1
+    // The plugin ships no Android resources (classes.dex only): every screen
+    // is built programmatically. Declaring this avoids requiring
+    // src/main/res, which does not exist.
+    requiresResources = false
     tvTypes = listOf(
         "TvSeries",
         "Movie",

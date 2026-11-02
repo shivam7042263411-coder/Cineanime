@@ -21,6 +21,14 @@ object Settings {
     const val STREMIO_ADDONS_KEY       = "stremio_addons"
     const val NEW_PROVIDER_DEFAULT_ON  = "new_provider_default_on"
     const val CF_BYPASS_ENABLED        = "cloudflare_webview_bypass_enabled"
+    const val CF_USER_AGENT_KEY        = "cf_user_agent"
+
+    fun saveCfUserAgent(userAgent: String) {
+        if (userAgent.isNotBlank()) setKey(CF_USER_AGENT_KEY, userAgent.trim())
+    }
+
+    fun getCfUserAgent(): String? =
+        getKey<String>(CF_USER_AGENT_KEY)?.takeIf { it.isNotBlank() }
 
     private const val SEEN_PROVIDERS_KEY = "seen_providers"
     private const val PROVIDER_ORDER_KEY = "provider_order"
