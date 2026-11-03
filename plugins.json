@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 524,
+    "version": 525,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v524: Cookie freshness check on app open - if saved cf_clearance is older than ~30 min, the invisible WebView solves Cloudflare in the background before you tap play. Invisible WebView toggle added to settings. Pre-flight probe throttled to once per minute and skipped entirely when the cookie is fresh. Stream-link cache (~20 min) so re-tapping the same episode doesn't re-hit AnimePahe. One canonical AnimePahe domain only. All previous v523 features retained: Phisher-style bottom sheet UI, 70% WebView, auto-save/dismiss, mouse cursor, purge/poll/auto-dismiss.",
-    "fileSize": 801897,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v525: Fixed invisible WebView toggle (was inverted - now \"Hide\" actually hides the WebView). Fixed app-open cookie freshness check - cookies saved by older versions without a timestamp are treated as fresh so the bypass doesn't launch unnecessarily. Invisible mode now truly hides all UI (title, status, progress) - WebView solves in background. All v524 features retained: cookie age check on open, probe throttle once per minute, skip probe when cookie fresh, stream-link cache ~20 min, one canonical AnimePahe domain.",
+    "fileSize": 801939,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-5ff99a3b00d838f92d1a2d98e81946538157e6093c74d52305f04174ec4f6833"
+    "fileHash": "sha256-ddccf633136a71f5fbd6d03d3e8be59d6429612eb65b597ed73b19e6bea335af"
   }
 ]
