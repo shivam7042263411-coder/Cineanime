@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 523,
+    "version": 524,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v523: Cloudflare bypass now uses Phisher's AnimePahe WebView UI and flow exactly - Material BottomSheetDialogFragment, 70% height WebView, starts collapsed then slides to full at ~3s, 1s title+cookie polling, 120s timeout, stale cf_clearance/__cf_bm/cf_chl* purge, cookie harvest across mirrors, auto-save of clearance + solving User-Agent, 500ms auto-dismiss, Phisher's drawn mouse cursor. Provider, extractors and request plumbing remain CineStream's. Includes v522 wait-and-retry probe, v520 device WebView UA, movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB logo any-language fallback (v510), fanart.tv logo fallback (v512), TMDB backdrop middle layer (v511).",
-    "fileSize": 798697,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v524: Cookie freshness check on app open - if saved cf_clearance is older than ~30 min, the invisible WebView solves Cloudflare in the background before you tap play. Invisible WebView toggle added to settings. Pre-flight probe throttled to once per minute and skipped entirely when the cookie is fresh. Stream-link cache (~20 min) so re-tapping the same episode doesn't re-hit AnimePahe. One canonical AnimePahe domain only. All previous v523 features retained: Phisher-style bottom sheet UI, 70% WebView, auto-save/dismiss, mouse cursor, purge/poll/auto-dismiss.",
+    "fileSize": 801897,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-ff1812aae7a7c1e34f3f50cf040ba4a355ef574f8a1e87cb04f28a33cc41d6a1"
+    "fileHash": "sha256-5ff99a3b00d838f92d1a2d98e81946538157e6093c74d52305f04174ec4f6833"
   }
 ]

@@ -57,6 +57,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         private const val POLL_TIMEOUT_MS = 120_000L
         private const val ARG_URL = "target_url"
         private const val ARG_EXPANDED = "start_expanded"
+        private const val ARG_VISIBLE = "web_view_visible"
 
         private val CHALLENGE_TITLES = listOf(
             "just a moment",
@@ -70,11 +71,13 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         fun newInstance(
             targetUrl: String,
             startExpanded: Boolean = false,
+            webViewVisible: Boolean = true,
             onFinished: ((Boolean) -> Unit)? = null,
         ): CloudflareWebViewDialog = CloudflareWebViewDialog().apply {
             arguments = Bundle().apply {
                 putString(ARG_URL, targetUrl)
                 putBoolean(ARG_EXPANDED, startExpanded)
+                putBoolean(ARG_VISIBLE, webViewVisible)
             }
             this.onFinished = onFinished
         }
@@ -95,6 +98,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
     private var onFinished: ((Boolean) -> Unit)? = null
     private var targetUrl: String = ""
     private var startExpanded: Boolean = false
+    private var webViewVisible: Boolean = true
 
     private var webView: WebView? = null
     private var statusText: TextView? = null
@@ -143,6 +147,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         super.onCreate(savedInstanceState)
         targetUrl = arguments?.getString(ARG_URL).orEmpty()
         startExpanded = arguments?.getBoolean(ARG_EXPANDED) ?: false
+        webViewVisible = arguments?.getBoolean(ARG_VISIBLE) ?: true
     }
 
     private fun scheduleNextPoll() {
@@ -269,118 +274,121 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             ),
         )
 
-        val cursorView = ImageView(requireContext())
-        val cursorSize = (26f * resources.displayMetrics.density).toInt()
-        cursorView.layoutParams = FrameLayout.LayoutParams(cursorSize, cursorSize)
+        // Only show the drawn mouse cursor when the WebView is visible.
+        if (webViewVisible) {
+            val cursorView = ImageView(requireContext())
+            val cursorSize = (26f * resources.displayMetrics.density).toInt()
+            cursorView.layoutParams = FrameLayout.LayoutParams(cursorSize, cursorSize)
 
-        val cursorPath = Path().apply {
-            moveTo(0f, 0f)
-            lineTo(0f, 22f)
-            lineTo(5.5f, 16.5f)
-            lineTo(10.5f, 27f)
-            lineTo(14.5f, 25f)
-            lineTo(9.5f, 14.5f)
-            lineTo(16.5f, 14.5f)
-            close()
-        }
-        Matrix().apply {
-            setScale(cursorSize / 30f, cursorSize / 30f)
-            cursorPath.transform(this)
-        }
-
-        cursorView.setImageDrawable(object : Drawable() {
-            private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                style = Paint.Style.FILL
+            val cursorPath = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(0f, 22f)
+                lineTo(5.5f, 16.5f)
+                lineTo(10.5f, 27f)
+                lineTo(14.5f, 25f)
+                lineTo(9.5f, 14.5f)
+                lineTo(16.5f, 14.5f)
+                close()
             }
-            private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.BLACK
-                style = Paint.Style.STROKE
-                strokeWidth = 3f
-                strokeJoin = Paint.Join.ROUND
+            Matrix().apply {
+                setScale(cursorSize / 30f, cursorSize / 30f)
+                cursorPath.transform(this)
             }
 
-            override fun draw(canvas: Canvas) {
-                canvas.drawPath(cursorPath, fillPaint)
-                canvas.drawPath(cursorPath, strokePaint)
+            cursorView.setImageDrawable(object : Drawable() {
+                private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    style = Paint.Style.FILL
+                }
+                private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.BLACK
+                    style = Paint.Style.STROKE
+                    strokeWidth = 3f
+                    strokeJoin = Paint.Join.ROUND
+                }
+
+                override fun draw(canvas: Canvas) {
+                    canvas.drawPath(cursorPath, fillPaint)
+                    canvas.drawPath(cursorPath, strokePaint)
+                }
+
+                override fun setAlpha(alpha: Int) {
+                    fillPaint.alpha = alpha
+                    strokePaint.alpha = alpha
+                }
+
+                override fun setColorFilter(colorFilter: ColorFilter?) {
+                    fillPaint.colorFilter = colorFilter
+                    strokePaint.colorFilter = colorFilter
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+            })
+            cursorView.elevation = 100f
+            webViewContainer.addView(cursorView)
+
+            var cursorX = 0f
+            var cursorY = 0f
+            cursorView.post {
+                if (cursorX == 0f && cursorY == 0f && webViewContainer.width > 0) {
+                    cursorX = webViewContainer.width / 2f
+                    cursorY = webViewContainer.height / 2f
+                    cursorView.translationX = cursorX
+                    cursorView.translationY = cursorY
+                }
             }
 
-            override fun setAlpha(alpha: Int) {
-                fillPaint.alpha = alpha
-                strokePaint.alpha = alpha
-            }
-
-            override fun setColorFilter(colorFilter: ColorFilter?) {
-                fillPaint.colorFilter = colorFilter
-                strokePaint.colorFilter = colorFilter
-            }
-
-            @Deprecated("Deprecated in Java")
-            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
-        })
-        cursorView.elevation = 100f
-        webViewContainer.addView(cursorView)
-
-        var cursorX = 0f
-        var cursorY = 0f
-        cursorView.post {
-            if (cursorX == 0f && cursorY == 0f && webViewContainer.width > 0) {
-                cursorX = webViewContainer.width / 2f
-                cursorY = webViewContainer.height / 2f
-                cursorView.translationX = cursorX
-                cursorView.translationY = cursorY
-            }
-        }
-
-        fun handleCursorKey(event: KeyEvent): Boolean {
-            val view = webView ?: return false
-            if (event.action == KeyEvent.ACTION_DOWN) {
-                when (event.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_UP -> cursorY = (cursorY - 40f).coerceAtLeast(0f)
-                    KeyEvent.KEYCODE_DPAD_DOWN -> cursorY = (cursorY + 40f).coerceAtMost(view.height - 24f)
-                    KeyEvent.KEYCODE_DPAD_LEFT -> cursorX = (cursorX - 40f).coerceAtLeast(0f)
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> cursorX = (cursorX + 40f).coerceAtMost(view.width - 24f)
-                    KeyEvent.KEYCODE_DPAD_CENTER,
-                    KeyEvent.KEYCODE_ENTER,
-                    KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                        val time = SystemClock.uptimeMillis()
-                        val down = MotionEvent.obtain(
-                            time, time, MotionEvent.ACTION_DOWN,
-                            cursorX + 2f, cursorY + 2f, 0,
-                        )
-                        val up = MotionEvent.obtain(
-                            time, time + 100, MotionEvent.ACTION_UP,
-                            cursorX + 2f, cursorY + 2f, 0,
-                        )
-                        view.dispatchTouchEvent(down)
-                        view.dispatchTouchEvent(up)
-                        down.recycle()
-                        up.recycle()
+            fun handleCursorKey(event: KeyEvent): Boolean {
+                val view = webView ?: return false
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    when (event.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP -> cursorY = (cursorY - 40f).coerceAtLeast(0f)
+                        KeyEvent.KEYCODE_DPAD_DOWN -> cursorY = (cursorY + 40f).coerceAtMost(view.height - 24f)
+                        KeyEvent.KEYCODE_DPAD_LEFT -> cursorX = (cursorX - 40f).coerceAtLeast(0f)
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> cursorX = (cursorX + 40f).coerceAtMost(view.width - 24f)
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            val time = SystemClock.uptimeMillis()
+                            val down = MotionEvent.obtain(
+                                time, time, MotionEvent.ACTION_DOWN,
+                                cursorX + 2f, cursorY + 2f, 0,
+                            )
+                            val up = MotionEvent.obtain(
+                                time, time + 100, MotionEvent.ACTION_UP,
+                                cursorX + 2f, cursorY + 2f, 0,
+                            )
+                            view.dispatchTouchEvent(down)
+                            view.dispatchTouchEvent(up)
+                            down.recycle()
+                            up.recycle()
+                        }
+                        else -> return false
                     }
-                    else -> return false
+                    cursorView.translationX = cursorX
+                    cursorView.translationY = cursorY
+                    return true
                 }
-                cursorView.translationX = cursorX
-                cursorView.translationY = cursorY
-                return true
+
+                if (event.action == KeyEvent.ACTION_UP) {
+                    return when (event.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP,
+                        KeyEvent.KEYCODE_DPAD_DOWN,
+                        KeyEvent.KEYCODE_DPAD_LEFT,
+                        KeyEvent.KEYCODE_DPAD_RIGHT,
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER -> true
+                        else -> false
+                    }
+                }
+
+                return false
             }
 
-            if (event.action == KeyEvent.ACTION_UP) {
-                return when (event.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_UP,
-                    KeyEvent.KEYCODE_DPAD_DOWN,
-                    KeyEvent.KEYCODE_DPAD_LEFT,
-                    KeyEvent.KEYCODE_DPAD_RIGHT,
-                    KeyEvent.KEYCODE_DPAD_CENTER,
-                    KeyEvent.KEYCODE_ENTER,
-                    KeyEvent.KEYCODE_NUMPAD_ENTER -> true
-                    else -> false
-                }
-            }
-
-            return false
+            dialog?.setOnKeyListener { _, _, event -> handleCursorKey(event) }
         }
-
-        dialog?.setOnKeyListener { _, _, event -> handleCursorKey(event) }
         root.addView(webViewContainer)
         return root
     }
@@ -403,6 +411,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             isFocusableInTouchMode = true
             requestFocus()
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            // Invisible mode: WebView solves in the background, user sees nothing.
+            if (!webViewVisible) {
+                visibility = View.GONE
+            }
         }
 
         CookieManager.getInstance().apply {

@@ -240,6 +240,16 @@ internal object SettingsDialog {
                 setPadding(0, 0, 0, 12.dp(context))
             })
 
+            // Invisible WebView toggle
+            addView(buildToggleRow(
+                context,
+                "Hide Cloudflare WebView (invisible solve)",
+                "When on, the bypass WebView solves silently in the background. " +
+                    "Turn off if Cloudflare ever shows a checkbox you need to tap.",
+                Settings.CF_WEBVIEW_VISIBLE, true, pending))
+
+            addView(SettingsWidgets.divider(context))
+
             // Site buttons with save/remove options
             sites.forEach { domainObj ->
                 lateinit var statusText: TextView
@@ -252,7 +262,11 @@ internal object SettingsDialog {
 
                     actionsRow.removeAllViews()
                     actionsRow.addView(SettingsWidgets.pillBtn(context, "🌐 Open", Color.parseColor("#60A5FA"), Color.parseColor("#0B1120"), Color.parseColor("#1D4ED8")) {
-                        SettingsWebView.showCloudflareBypass(context, "https://${domainObj.domain}") { refreshRow() }
+                        SettingsWebView.showCloudflareBypass(
+                            context,
+                            "https://${domainObj.domain}",
+                            webViewVisible = Settings.cloudflareWebViewVisible(),
+                        ) { refreshRow() }
                     })
                     if (hasCookie) {
                         actionsRow.addView(SettingsWidgets.hSpacer(context, 6))

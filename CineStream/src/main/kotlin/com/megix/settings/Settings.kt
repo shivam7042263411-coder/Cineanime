@@ -22,6 +22,41 @@ object Settings {
     const val NEW_PROVIDER_DEFAULT_ON  = "new_provider_default_on"
     const val CF_BYPASS_ENABLED        = "cloudflare_webview_bypass_enabled"
     const val CF_USER_AGENT_KEY        = "cf_user_agent"
+    const val CF_WEBVIEW_VISIBLE       = "cloudflare_webview_visible"
+
+    // ── Per-domain cookie timestamp (Cloudflare bypass staleness) ────────
+    private const val CF_COOKIE_SAVED_AT_PREFIX = "cf_cookie_saved_at_"
+
+    private fun cookieTsKeyForDomain(urlOrDomain: String): String {
+        val domain = if (urlOrDomain.contains("://")) {
+            Uri.parse(urlOrDomain).host?.lowercase()?.removePrefix("www.")
+                ?: normalizeBypassDomain(urlOrDomain)
+        } else {
+            normalizeBypassDomain(urlOrDomain)
+        }
+        return "$CF_COOKIE_SAVED_AT_PREFIX$domain"
+    }
+
+    /** Save the time (epoch ms) when a cookie was last refreshed for a domain. */
+    fun saveCookieTimestamp(urlOrDomain: String, ts: Long = System.currentTimeMillis()) {
+        setKey(cookieTsKeyForDomain(urlOrDomain), ts)
+    }
+
+    /** Read the last save time for a domain, or null if never saved. */
+    fun getCookieTimestamp(urlOrDomain: String): Long? =
+        getKey<Long>(cookieTsKeyForDomain(urlOrDomain))
+
+    /**
+     * Returns true if the saved cookie for the domain is older than maxAgeMs,
+     * or if no cookie/timestamp exists at all.
+     */
+    fun isCookieStale(urlOrDomain: String, maxAgeMs: Long): Boolean {
+        val ts = getCookieTimestamp(urlOrDomain) ?: return true
+        return System.currentTimeMillis() - ts > maxAgeMs
+    }
+
+    /** Is the Cloudflare bypass WebView visible (shown) or hidden (invisible solve)? */
+    fun cloudflareWebViewVisible(): Boolean = getKey<Boolean>(CF_WEBVIEW_VISIBLE) ?: true
 
     fun saveCfUserAgent(userAgent: String) {
         if (userAgent.isNotBlank()) setKey(CF_USER_AGENT_KEY, userAgent.trim())
@@ -89,6 +124,7 @@ object Settings {
 
     fun saveCookieForDomain(urlOrDomain: String, cookies: String) {
         setKey(cookieKeyForDomain(urlOrDomain), cookies.trim())
+        saveCookieTimestamp(urlOrDomain)
     }
 
     fun getCookieForDomain(urlOrDomain: String): String? =

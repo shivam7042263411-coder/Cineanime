@@ -15,6 +15,7 @@ import java.net.URLEncoder
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * CineAnime — AniList-powered anime provider (Phase 2).
@@ -47,6 +48,36 @@ class CineAnimeProvider : MainAPI() {
         private const val tmdbKey = BuildConfig.TMDB_KEY
         private const val tmdbApi = "https://api.themoviedb.org/3"
         private const val perPage = 20
+
+        // Short-lived stream-link cache (~20 minutes) so re-tapping the same
+        // episode doesn't re-hit AnimePahe and burn Cloudflare cookies.
+        private const val LINK_CACHE_TTL_MS = 20L * 60 * 1000 // 20 minutes
+
+        private data class CachedLinks(
+            val links: List<ExtractorLink>,
+            val savedAt: Long,
+        )
+
+        private val linkCache = ConcurrentHashMap<String, CachedLinks>()
+
+        private fun cacheKey(data: CineAnimeEpisodeData): String {
+            val id = data.tmdbId ?: data.anilistId ?: data.malId ?: 0
+            val ep = data.episode ?: data.absoluteEpisode ?: 0
+            return "animepahe:$id:$ep"
+        }
+
+        fun getCachedLinks(key: String): List<ExtractorLink>? {
+            val cached = linkCache[key] ?: return null
+            if (System.currentTimeMillis() - cached.savedAt > LINK_CACHE_TTL_MS) {
+                linkCache.remove(key)
+                return null
+            }
+            return cached.links
+        }
+
+        fun putCachedLinks(key: String, links: List<ExtractorLink>) {
+            linkCache[key] = CachedLinks(links, System.currentTimeMillis())
+        }
     }
 
     // ── Catalog definitions (AniList-native sort/status, easy to extend) ──
@@ -658,13 +689,36 @@ class CineAnimeProvider : MainAPI() {
     ): Boolean {
         val res = runCatching { parseJson<CineAnimeEpisodeData>(data) }.getOrNull()
             ?: return false
+
         // No episode-number gate here: movies legitimately carry none, and
         // AnimePahe.invoke defaults them to episode 1. A missing-numbers
         // early return once silently killed ALL movie playback.
+
+        // Serve from short-lived cache if available — avoids re-hitting
+        // AnimePahe for the same episode within ~20 minutes.
+        val key = cacheKey(res)
+        val cached = getCachedLinks(key)
+        if (cached != null && cached.isNotEmpty()) {
+            cached.forEach { link -> callback.invoke(link) }
+            return true
+        }
+
         // Proactive Cloudflare bypass probe: if cookies expired mid-session,
         // pop the WebView before attempting to load links.
         CineStreamExtractors.probeAndResolveIfNeeded("https://animepahe.pw/")
-        return AnimePahe.invoke(res, subtitleCallback, callback)
+
+        val collected = mutableListOf<ExtractorLink>()
+        val result = AnimePahe.invoke(res, subtitleCallback) { link ->
+            collected.add(link)
+            callback.invoke(link)
+        }
+
+        // Cache the collected links for the next tap on this episode.
+        if (collected.isNotEmpty()) {
+            putCachedLinks(key, collected.toList())
+        }
+
+        return result
     }
 
     // ── CineAnime DTOs (file-local; shared parser classes untouched) ─────

@@ -59,6 +59,14 @@ object CineStreamExtractors {
     // bypass WebView from anywhere (e.g. pre-flight probe before playback).
     var context: Context? = null
 
+    // Throttle pre-flight probes so we don't hammer AnimePahe on every tap.
+    private val lastProbeAt = ConcurrentHashMap<String, Long>()
+    private const val PROBE_THROTTLE_MS = 60_000L // once per minute per URL
+
+    // If the saved cookie is younger than this, assume it's still valid and
+    // skip the pre-flight probe entirely.
+    private const val PROBE_SKIP_MAX_AGE_MS = 30L * 60 * 1000 // 30 minutes
+
     // Cloudflare binds cf_clearance to the exact User-Agent that solved the
     // challenge. Both solvers persist their UA at solve time: our bypass
     // WebView saves the cleaned UA it actually used, and CloudflareKiller
@@ -185,6 +193,22 @@ object CineStreamExtractors {
     // If Cloudflare challenges (cookies expired/invalid), pops the bypass
     // WebView so the user can solve immediately — no manual settings needed.
     suspend fun probeAndResolveIfNeeded(url: String = "https://animepahe.pw/"): Boolean {
+        // Skip probe entirely if we have a fresh saved cookie — no need to
+        // poke AnimePahe when we already know the cookie is good.
+        if (!Settings.isCookieStale(url, PROBE_SKIP_MAX_AGE_MS)) {
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: cookie fresh, skipping probe for $url")
+            return false
+        }
+
+        // Throttle: at most one probe per minute per URL to avoid rate limits.
+        val now = System.currentTimeMillis()
+        val last = lastProbeAt[url] ?: 0L
+        if (now - last < PROBE_THROTTLE_MS) {
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: throttled probe for $url")
+            return false
+        }
+        lastProbeAt[url] = now
+
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: probing $url")
         val probe = runCatching { cfGet(url, mapOf(), allowRedirects = false) }.getOrNull()
         if (probe == null || !isCloudflarePage(probe)) return false
@@ -195,7 +219,11 @@ object CineStreamExtractors {
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
         val solved = withContext(Dispatchers.Main.immediate) {
             suspendCancellableCoroutine<Boolean> { continuation ->
-                val launched = showCloudflareBypass(ctx, url) { success ->
+                val launched = showCloudflareBypass(
+                    ctx,
+                    url,
+                    webViewVisible = Settings.cloudflareWebViewVisible(),
+                ) { success ->
                     Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
                     if (continuation.isActive) continuation.resume(success)
                 }

@@ -90,6 +90,7 @@ internal object SettingsWebView {
     fun showCloudflareBypass(
         context: Context,
         startUrl: String,
+        webViewVisible: Boolean = true,
         onCookiesChanged: (Boolean) -> Unit = {},
     ): Boolean {
         val activity = findFragmentActivity(context)
@@ -111,7 +112,12 @@ internal object SettingsWebView {
             if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it"
         }
         return runCatching {
-            CloudflareWebViewDialog.newInstance(targetUrl, startExpanded = false, onFinished = onCookiesChanged)
+            CloudflareWebViewDialog.newInstance(
+                targetUrl,
+                startExpanded = false,
+                webViewVisible = webViewVisible,
+                onFinished = onCookiesChanged,
+            )
                 .show(activity.supportFragmentManager, CF_FRAGMENT_TAG)
             true
         }.getOrElse {

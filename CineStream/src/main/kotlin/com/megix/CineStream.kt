@@ -94,21 +94,31 @@ open class CineStream: Plugin() {
         CineStreamExtractors.context = context
 
         // ── Auto Cloudflare bypass popup ─────────────────────────────────────
-        // If no AnimePahe cookies are saved yet, pop the bypass WebView so the
-        // user can solve Cloudflare once. After that, saved cookies restore
-        // automatically on every launch and playback works directly.
-        val needsBypass = listOf("animepahe.pw", "animepahe.org", "animepahe.com")
-            .none { Settings.hasSavedCookieForDomain(it) }
+        // If no AnimePahe cookies are saved yet, or if the saved cookie is
+        // older than ~30 minutes (likely expired), pop the bypass WebView so
+        // the user gets a fresh cookie before they try to play anything.
+        val COOKIE_REFRESH_MAX_AGE_MS = 30L * 60 * 1000 // 30 minutes
 
-        if (needsBypass && context is Activity && !autoBypassShown) {
+        val needsBypassOrRefresh = listOf("animepahe.pw", "animepahe.org", "animepahe.com")
+            .any { domain ->
+                val hasCookie = Settings.hasSavedCookieForDomain(domain)
+                if (!hasCookie) true
+                else Settings.isCookieStale(domain, COOKIE_REFRESH_MAX_AGE_MS)
+            }
+
+        if (needsBypassOrRefresh && context is Activity && !autoBypassShown) {
             autoBypassShown = true
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
-                    showCloudflareBypass(context, "https://animepahe.pw/") {
-                        Log.d("CineStreamAutoBypass", "Cookies saved via bypass dialog")
+                    showCloudflareBypass(
+                        context,
+                        "https://animepahe.pw/",
+                        webViewVisible = Settings.cloudflareWebViewVisible(),
+                    ) {
+                        Log.d("CineStreamAutoBypass", "Cookies refreshed via bypass dialog")
                     }
                 } catch (e: Throwable) {
-                    Log.e("CineStreamAutoBypass", "Failed to show bypass dialog: ${e.message}")
+                    Log.e("CineStreamAutoBypass", "Failed to refresh cookies: ${e.message}")
                 }
             }, 5000) // 5s delay so the Activity is fully ready for Dialogs
         }
