@@ -636,6 +636,16 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         purgeCfCookiesFromWebViewJar()
         webView?.loadUrl(targetUrl)
         handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
+
+        // Cloudflare sets cf_clearance asynchronously after JS runs.
+        // Re-check a couple of seconds after first paint to catch it early.
+        handler.postDelayed({
+            if (!cookiesSaved) {
+                webView?.let { wv ->
+                    checkForClearance(wv.url, wv.title ?: "")
+                }
+            }
+        }, 3000L)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -662,15 +672,13 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             databaseEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
             mediaPlaybackRequiresUserGesture = false
+            blockNetworkImage = false
+            blockNetworkLoads = false
 
-            val originalUa = userAgentString ?: ""
-            var cleanUa = Regex("Version/[0-9.]+\\s*")
-                .replace(originalUa.replace("; wv", ""), "")
-            cleanUa = cleanUa.replace("Android TV", "Android")
-            if (cleanUa.contains("Android") && !cleanUa.contains("Mobile")) {
-                cleanUa = cleanUa.replace("Safari/", "Mobile Safari/")
-            }
-            userAgentString = cleanUa
+            // Use the raw WebView UA with minimal cleaning.
+            // Over-cleaning makes Cloudflare fingerprint the client as suspicious
+            // and it never issues a cf_clearance cookie.
+            userAgentString = userAgentString ?: ""
 
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             allowContentAccess = true
@@ -697,25 +705,48 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
                 val title = view?.title ?: ""
                 Log.d(TAG, "onPageFinished title='$title' url=$url")
-                val cookieStr = extractCookies()
-                val hasClearanceCookie = hasClearance(cookieStr)
-                val isChallenge = isChallengeTitle(title)
-
-                if (hasClearanceCookie && !isChallenge) {
-                    Log.d(TAG, "onPageFinished: Clearance verified! Saving cookies.")
-                    saveCookiesAndDismiss(cookieStr)
-                    return
-                }
-
-                if (isChallenge) {
-                    updateStatus("🔄 Challenge active – solve the CAPTCHA above")
-                } else {
-                    updateStatus("⏳ Waiting for verification…")
-                }
+                checkForClearance(url, title)
             }
         }
 
         return wv
+    }
+
+    /**
+     * Check for cf_clearance using both CookieManager and direct JavaScript
+     * document.cookie access. Cloudflare sometimes sets cookies via JS that
+     * CookieManager doesn't immediately see, so we read document.cookie too.
+     */
+    private fun checkForClearance(url: String?, title: String) {
+        val cookieStr = extractCookies()
+        val hasClearanceCookie = hasClearance(cookieStr)
+        val isChallenge = isChallengeTitle(title)
+
+        Log.d(TAG, "check title='$title' url=$url clearance=$hasClearanceCookie challenge=$isChallenge cookies=$cookieStr")
+
+        if (hasClearanceCookie && !isChallenge) {
+            Log.d(TAG, "Clearance verified! Saving cookies.")
+            saveCookiesAndDismiss(cookieStr)
+            return
+        }
+
+        // Also probe document.cookie directly via JavaScript — Cloudflare
+        // may set cf_clearance via document.cookie which CookieManager
+        // might not expose right away.
+        webView?.evaluateJavascript("document.cookie") { cookieResult ->
+            val jsCookie = cookieResult ?: ""
+            val jsHasClearance = hasClearance(jsCookie)
+            Log.d(TAG, "JS document.cookie='$jsCookie' clearance=$jsHasClearance")
+            if (jsHasClearance && !isChallenge) {
+                saveCookiesAndDismiss(jsCookie)
+            }
+        }
+
+        if (isChallenge) {
+            updateStatus("🔄 Challenge active – solve the CAPTCHA above")
+        } else {
+            updateStatus("⏳ Waiting for verification…")
+        }
     }
 
     private fun extractCookies(): String {
@@ -728,10 +759,15 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         if (targetHost.isNotBlank()) {
             urls.add(targetHost)
             urls.add("$targetHost/")
+            // Cloudflare often sets cf_clearance on the www subdomain too.
+            urls.add(targetHost.replace("animepahe.", "www.animepahe.") + "/")
         }
         urls.add("https://animepahe.pw/")
+        urls.add("https://www.animepahe.pw/")
         urls.add("https://animepahe.org/")
+        urls.add("https://www.animepahe.org/")
         urls.add("https://animepahe.com/")
+        urls.add("https://www.animepahe.com/")
         urls.add("https://challenges.cloudflare.com/")
         urls.add("https://cloudflare.com/")
 
