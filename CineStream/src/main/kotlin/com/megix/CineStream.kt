@@ -15,6 +15,13 @@ import kotlinx.coroutines.runBlocking
 
 @CloudstreamPlugin
 open class CineStream: Plugin() {
+    companion object {
+        // Plugin.load() normally runs once per process, but a plugin reload or
+        // an in-place update can call it again. Only auto-open the bypass once.
+        @Volatile
+        private var autoBypassShown = false
+    }
+
     override fun load(context: Context) {
 
         // Load dynamic API URLs once
@@ -93,7 +100,8 @@ open class CineStream: Plugin() {
         val needsBypass = listOf("animepahe.pw", "animepahe.org", "animepahe.com")
             .none { Settings.hasSavedCookieForDomain(it) }
 
-        if (needsBypass && context is Activity) {
+        if (needsBypass && context is Activity && !autoBypassShown) {
+            autoBypassShown = true
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
                     showCloudflareBypass(context, "https://animepahe.pw/") {

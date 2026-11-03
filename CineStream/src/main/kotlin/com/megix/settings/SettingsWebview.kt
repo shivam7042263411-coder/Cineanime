@@ -53,7 +53,40 @@ internal object SettingsWebView {
         )
     }
 
-    private const val SPOOF_JS = "if(!window.__csxSpoofed){window.__csxSpoofed=!0;let ua='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36';try{Object.defineProperty(navigator,'userAgent',{get:()=>ua});Object.defineProperty(navigator,'appVersion',{get:()=>ua.replace('Mozilla/','')})}catch(e){}if(!window.chrome)window.chrome={runtime:{},loadTimes:()=>{},csi:()=>{}}}"
+    // Only shim window.chrome, which some WebView builds lack and Cloudflare
+    // fingerprints. Never override navigator.userAgent here: the WebView's UA
+    // (settings.userAgentString) is already the device's real Chrome UA, and a
+    // JS override that disagrees with the Client Hints the engine sends makes
+    // Cloudflare treat the client as spoofed and re-challenge it indefinitely.
+    private const val SPOOF_JS = "if(!window.__csxSpoofed){window.__csxSpoofed=!0;if(!window.chrome)window.chrome={runtime:{},loadTimes:()=>{},csi:()=>{}}}"
+
+    // The one bypass dialog currently on screen. Cloudflare marks a challenge
+    // in the shared cookie jar; two challenges at once invalidate each other's
+    // __cf_chl_* cookies, so the page reloads forever. Only ever show one.
+    private var cfBypassDialog: Dialog? = null
+
+    /**
+     * The device's real WebView UA, cleaned the same way the app's
+     * CloudflareKiller solver cleans it (drop "; wv" and "Version/x.y").
+     *
+     * cf_clearance is bound to the UA that solved it. Deriving the UA from the
+     * engine keeps it consistent with the Sec-CH-UA-* hints Chromium sends, and
+     * it matches WebViewResolver.webViewUserAgent, which the plugin's requests
+     * already send via CineStreamExtractors.currentCfUserAgent().
+     */
+    private fun deviceUserAgent(context: Context): String {
+        val raw = runCatching { WebSettings.getDefaultUserAgent(context) }
+            .getOrNull()?.takeIf { it.isNotBlank() }
+            ?: CF_BYPASS_USER_AGENT
+        var ua = raw
+            .replace("; wv", "")
+            .replace(Regex("Version/[0-9.]+\\s*"), "")
+            .replace("Android TV", "Android")
+        if (ua.contains("Android") && !ua.contains("Mobile")) {
+            ua = ua.replace("Safari/", "Mobile Safari/")
+        }
+        return ua
+    }
 
     private const val GRAMCINEMA_INTERCEPT_JS = "if(!window.__csxTokenHooked){window.__csxTokenHooked=!0;const isReal=s=>s&&t.startsWith('eyJ0eXAiOi')&&!s.includes(' ');let _set=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(n,v){if(n.toLowerCase()==='authorization'){let t=v.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real XHR token!');try{Android.onToken(t)}catch(e){}}}return _set.apply(this,arguments)};let _f=window.fetch;if(_f)window.fetch=function(u,i){try{if(i&&i.headers){let h=i.headers,a=typeof h.get==='function'?h.get('Authorization'):(h.Authorization||h.authorization||'');if(a){let t=a.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real Fetch token!');Android.onToken(t)}}}}catch(e){}return _f.apply(this,arguments)}}"
 
@@ -66,11 +99,18 @@ internal object SettingsWebView {
     }
 
     fun showCloudflareBypass(context: Context, startUrl: String, onCookiesChanged: () -> Unit = {}) {
+        if (cfBypassDialog?.isShowing == true) {
+            Log.d(TAG, "Cloudflare bypass dialog already open, not stacking another")
+            return
+        }
         val theme = SettingsTheme
         val mainHandler = Handler(Looper.getMainLooper())
         val targetUrl = startUrl.trim().let {
             if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it"
         }
+        // The UA that solves the challenge must be the UA used for requests later
+        // (cf_clearance is UA-bound), so use the engine's real UA here.
+        val solvingUserAgent = deviceUserAgent(context)
 
         var currentUrl = targetUrl
         var dialogRef: Dialog? = null
@@ -118,6 +158,9 @@ internal object SettingsWebView {
                 if (!cookies.isNullOrBlank()) {
                     Settings.saveCookieForDomain(currentUrl, cookies)
                     Settings.saveCookieForDomain(targetUrl, cookies)
+                    // Persist the UA this clearance is bound to, so requests made
+                    // after a process restart still send the matching UA.
+                    Settings.saveCfUserAgent(solvingUserAgent)
                     Log.d(TAG, "Saved cookies for $currentUrl and $targetUrl: ${cookies.take(80)}...")
                     refreshCookieDisplay(currentUrl)
                     onCookiesChanged()
@@ -138,7 +181,7 @@ internal object SettingsWebView {
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 useWideViewPort = true; loadWithOverviewMode = true
                 setSupportZoom(false); builtInZoomControls = false
-                userAgentString = CF_BYPASS_USER_AGENT
+                userAgentString = solvingUserAgent
                 setSupportMultipleWindows(true)
                 javaScriptCanOpenWindowsAutomatically = true
             }
@@ -233,6 +276,7 @@ internal object SettingsWebView {
             setOnDismissListener {
                 tvCursor.destroy()
                 webView.stopLoading(); webView.destroy()
+                cfBypassDialog = null
                 onCookiesChanged()
             }
             window?.apply {
@@ -253,6 +297,8 @@ internal object SettingsWebView {
             }
             show()
         }
+
+        cfBypassDialog = dialogRef
 
         webView.clearCache(true)
         webView.clearHistory()
