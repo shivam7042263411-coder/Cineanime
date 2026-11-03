@@ -19,7 +19,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -38,7 +37,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import android.widget.Toast
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -496,34 +494,6 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             }
             root.addView(progressBar)
 
-            // Action buttons row: Retry Solve + Force Save Cookies
-            root.addView(LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                setPadding(0, 8, 0, 0)
-                addView(SettingsWidgets.pillBtn(context, "🔄 Retry Solve", Color.parseColor("#22C55E"), Color.parseColor("#0B1120"), Color.parseColor("#16A34A")) {
-                    purgeCfCookiesFromWebViewJar()
-                    webView?.clearCache(true)
-                    webView?.clearHistory()
-                    webView?.loadUrl(targetUrl)
-                    handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
-                    updateStatus("🔄 Retrying Cloudflare solve…")
-                })
-                addView(SettingsWidgets.hSpacer(context, 8))
-                addView(SettingsWidgets.pillBtn(context, "💾 Force Save Cookies", Color.parseColor("#3B82F6"), Color.parseColor("#0B1120"), Color.parseColor("#2563EB")) {
-                    val cookieStr = extractCookies()
-                    if (cookieStr.isNotBlank()) {
-                        Log.d(TAG, "Force Save: cookies found → $cookieStr")
-                        saveCookiesAndDismiss(cookieStr)
-                    } else {
-                        Toast.makeText(
-                            context,
-                            "No cookies found in WebView jar yet — keep waiting or tap Retry",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                })
-            })
         }
 
         val webViewContainer = FrameLayout(requireContext()).apply {

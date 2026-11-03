@@ -59,7 +59,7 @@ object Settings {
     }
 
     /** Is the Cloudflare bypass WebView hidden (invisible solve)? When true, no UI is shown. */
-    fun cloudflareWebViewHidden(): Boolean = getKey<Boolean>(CF_WEBVIEW_HIDDEN) ?: false
+    fun cloudflareWebViewHidden(): Boolean = getKey<Boolean>(CF_WEBVIEW_HIDDEN) ?: true
 
     /** Is the Cloudflare bypass WebView visible (shown)? Opposite of cloudflareWebViewHidden(). */
     fun cloudflareWebViewVisible(): Boolean = !cloudflareWebViewHidden()

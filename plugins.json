@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 530,
+    "version": 531,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v530: Fixed Cloudflare bypass loop - cookies now detected even when cf_clearance is HttpOnly and invisible to JavaScript. hasClearance() now checks for cf_clearance= existence instead of requiring 10+ char token. Added manual 'Force Save Cookies' button in visible mode that saves whatever cookies are in the WebView jar right now as a fallback. Better cookie domain coverage including www. variants and bare domains. All v529 features retained: cookie saved under all 8 AnimePahe hosts, cleaned UA consistency, Retry Solve button, 5 post-load check intervals, invisible WebView toggle, cookie freshness check (~30 min), probe throttle once per minute, stream-link cache ~20 min.",
-    "fileSize": 808176,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v531: Completely automatic, invisible Cloudflare bypass \u2014 no buttons, no UI, no dialog. Invisible mode is now ON by default: when you open the app and the saved cookie is older than ~30 minutes, a headless WebView solves Cloudflare silently in the background, saves the cookie + solving UA under all AnimePahe domains (.pw, .org, .com, www.), then destroys itself. You just open the app and play \u2014 no pop-ups, no buttons, nothing to tap. The visible bottom sheet remains available only if you turn OFF \"Hide Cloudflare WebView\" in settings. All v530 fixes retained: lenient cf_clearance detection, cleaned UA consistency, cookie saved under all 8 hosts, probe throttle once per minute, skip probe when cookie fresh, stream-link cache ~20 min.",
+    "fileSize": 807429,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-0b21e6ce84c4ca04c4039fa1afb5bd8bcaa26028dc52451beb7258630a7931ab"
+    "fileHash": "sha256-9d1312f1292c701b136744871964cdd1d57dd7f495241deb65b61538e1ed5efe"
   }
 ]
