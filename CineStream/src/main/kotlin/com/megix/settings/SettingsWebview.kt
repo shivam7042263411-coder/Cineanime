@@ -195,10 +195,10 @@ internal object SettingsWebView {
         }
     }
 
-    fun showCloudflareBypass(context: Context, startUrl: String, onCookiesChanged: () -> Unit = {}) {
+    fun showCloudflareBypass(context: Context, startUrl: String, onCookiesChanged: (Boolean) -> Unit = {}): Boolean {
         if (cfBypassDialog?.isShowing == true) {
             Log.d(TAG, "Cloudflare bypass dialog already open, not stacking another")
-            return
+            return false
         }
         val theme = SettingsTheme
         val mainHandler = Handler(Looper.getMainLooper())
@@ -214,6 +214,14 @@ internal object SettingsWebView {
         var webViewRef: WebView? = null
         var pollRunnable: Runnable? = null
         var finished = false
+        var saved = false
+        var notified = false
+
+        fun notifyFinished(success: Boolean) {
+            if (notified) return
+            notified = true
+            onCookiesChanged(success)
+        }
 
         val statusText = TextView(context).apply {
             id = View.generateViewId()
@@ -251,6 +259,7 @@ internal object SettingsWebView {
         fun persistAndDismiss(cookies: String) {
             if (finished || !hasClearance(cookies)) return
             finished = true
+            saved = true
             pollRunnable?.let { mainHandler.removeCallbacks(it) }
             mainHandler.removeCallbacksAndMessages(null)
 
@@ -269,7 +278,7 @@ internal object SettingsWebView {
             statusText.text = "✅ Done! Cloudflare bypassed."
             statusText.setTextColor(Color.parseColor("#4CAF50"))
             progressBar.visibility = View.GONE
-            onCookiesChanged()
+            notifyFinished(true)
             mainHandler.postDelayed({ dialogRef?.dismiss() }, 500L)
         }
 
@@ -421,7 +430,7 @@ internal object SettingsWebView {
                 webView.stopLoading(); webView.destroy()
                 webViewRef = null
                 if (cfBypassDialog === this) cfBypassDialog = null
-                onCookiesChanged()
+                notifyFinished(saved)
             }
             window?.apply {
                 setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
@@ -469,6 +478,7 @@ internal object SettingsWebView {
             }
         }
         pollRunnable?.let { mainHandler.postDelayed(it, CF_POLL_INTERVAL_MS) }
+        return true
     }
 
     fun show(context: Context, type: LoginType, onToken: (String) -> Unit) {

@@ -7,8 +7,6 @@ import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.*
 import android.app.Activity
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.webkit.CookieManager
 import com.lagradost.nicehttp.NiceResponse
 import com.lagradost.api.Log
@@ -41,9 +39,13 @@ import java.util.concurrent.ConcurrentHashMap
 import com.megix.settings.Settings
 import com.megix.settings.SettingsWebView.showCloudflareBypass
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 object CineStreamExtractors {
 
@@ -185,19 +187,29 @@ object CineStreamExtractors {
     suspend fun probeAndResolveIfNeeded(url: String = "https://animepahe.pw/"): Boolean {
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: probing $url")
         val probe = runCatching { cfGet(url, mapOf(), allowRedirects = false) }.getOrNull()
-        if (probe != null && isCloudflarePage(probe)) {
-            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
-            val ctx = context ?: return false
-            if (ctx is Activity) {
-                Handler(Looper.getMainLooper()).post {
-                    showCloudflareBypass(ctx, url) {
-                        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: cookies refreshed via probe")
-                    }
+        if (probe == null || !isCloudflarePage(probe)) return false
+
+        val ctx = context ?: return false
+        if (ctx !is Activity) return false
+
+        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
+        val solved = withContext(Dispatchers.Main.immediate) {
+            suspendCancellableCoroutine<Boolean> { continuation ->
+                val launched = showCloudflareBypass(ctx, url) { success ->
+                    Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
+                    if (continuation.isActive) continuation.resume(success)
                 }
-                return true
+                // The dialog is already open (e.g. the launch auto-popup). Do
+                // not wait on a callback that this call will never receive.
+                if (!launched && continuation.isActive) continuation.resume(false)
             }
         }
-        return false
+        if (!solved) return false
+
+        // The request that triggered the probe was challenged; retry once the
+        // fresh clearance is persisted, exactly like Phisher's wait-and-retry.
+        val retry = runCatching { cfGet(url, mapOf(), allowRedirects = false) }.getOrNull()
+        return retry != null && !isCloudflarePage(retry)
     }
 
     private fun parseCookieString(cookieStr: String): LinkedHashMap<String, String> {
