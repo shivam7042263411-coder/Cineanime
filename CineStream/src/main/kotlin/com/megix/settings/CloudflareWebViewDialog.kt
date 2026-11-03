@@ -38,6 +38,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -96,8 +97,11 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             Regex("cf_clearance=([^;]+)").find(cookieStr)
                 ?.groupValues?.getOrNull(1)?.trim()
 
+        // cf_clearance is HttpOnly — document.cookie won't show it. We rely on
+        // CookieManager, but just check existence: any non-empty value means
+        // Cloudflare issued a clearance cookie.
         fun hasClearance(cookieStr: String): Boolean =
-            extractClearanceToken(cookieStr)?.length?.let { it >= 10 } == true
+            cookieStr.contains("cf_clearance=")
 
         /**
          * Solve Cloudflare cookies with no UI shown. Creates a headless WebView,
@@ -492,8 +496,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             }
             root.addView(progressBar)
 
-            // Retry Solve button — lets the user trigger another Cloudflare
-            // solve attempt if the automatic one didn't capture cf_clearance.
+            // Action buttons row: Retry Solve + Force Save Cookies
             root.addView(LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
@@ -505,6 +508,20 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     webView?.loadUrl(targetUrl)
                     handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
                     updateStatus("🔄 Retrying Cloudflare solve…")
+                })
+                addView(SettingsWidgets.hSpacer(context, 8))
+                addView(SettingsWidgets.pillBtn(context, "💾 Force Save Cookies", Color.parseColor("#3B82F6"), Color.parseColor("#0B1120"), Color.parseColor("#2563EB")) {
+                    val cookieStr = extractCookies()
+                    if (cookieStr.isNotBlank()) {
+                        Log.d(TAG, "Force Save: cookies found → $cookieStr")
+                        saveCookiesAndDismiss(cookieStr)
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "No cookies found in WebView jar yet — keep waiting or tap Retry",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 })
             })
         }
