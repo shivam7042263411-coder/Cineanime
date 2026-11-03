@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 528,
+    "version": 529,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v528: Cloudflare bypass fixes - added 'Retry Solve' button in visible mode for manual re-attempt, checks cookies from www. subdomains and without scheme prefix, probes for clearance at 5 intervals after page load (1s, 2.5s, 5s, 8s, 12s), restored setSupportMultipleWindows and javaScriptCanOpenWindowsAutomatically for Cloudflare challenge compatibility, expanded cookie purge to www mirrors. All v527 features retained: JS document.cookie detection, raw User-Agent, truly invisible WebView toggle, cookie freshness check (~30 min) on app open, probe throttle once per minute, skip probe when cookie fresh, stream-link cache ~20 min, one canonical AnimePahe domain.",
-    "fileSize": 807151,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v529: Fixed Cloudflare cookie persistence across sessions - first try worked but subsequent tries failed because cf_clearance was saved under only ONE AnimePahe domain (e.g. .pw) while stream requests went to other hosts (.org, .com, www.). Now saves the cookie under ALL AnimePahe domains (.pw, .org, .com, www.) whenever any one solves. Also fixed UA mismatch: CloudflareKiller's persistSolvedCookies was saving the RAW app UA (with ; wv, Version/) overwriting the bypass dialog's CLEANED UA \u2014 cf_clearance is bound to the exact solving UA, so a mismatch re-challenges. Both paths now save the same cleaned UA. All v528 features retained: Retry Solve button, 5 post-load check intervals, www subdomain cookie harvesting, invisible WebView toggle, cookie freshness check (~30 min), probe throttle once per minute, stream-link cache ~20 min.",
+    "fileSize": 807887,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-61d9343e89014e077dc5d88b7572d8fecbcd3eebfec1f0aa476d743e5760c81f"
+    "fileHash": "sha256-64bc8880cb910708a149daaa11ee86c2812742afca9b5d98309bd507647d9223"
   }
 ]
