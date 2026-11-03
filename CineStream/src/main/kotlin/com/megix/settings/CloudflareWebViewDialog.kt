@@ -867,14 +867,33 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         val currentHost = runCatching {
             val uri = Uri.parse(currentUrl)
             "${uri.scheme}://${uri.host}"
-        }.getOrDefault(targetHost)
+        }.getOrDefault(targetUrl)
 
-        Settings.saveCookieForDomain(currentHost, cookieStr)
+        // Save the cookie under ALL AnimePahe domains, not just the one that
+        // solved the challenge. cf_clearance is domain-specific, and stream
+        // requests may go to a different AnimePahe host than the challenge URL.
+        val allHosts = linkedSetOf(
+            currentHost,
+            targetHost,
+            "https://animepahe.pw",
+            "https://www.animepahe.pw",
+            "https://animepahe.org",
+            "https://www.animepahe.org",
+            "https://animepahe.com",
+            "https://www.animepahe.com",
+        ).filter { it.isNotBlank() }
+
+        allHosts.forEach { host ->
+            Settings.saveCookieForDomain(host, cookieStr)
+            Log.d(TAG, "Saved cookie for $host")
+        }
+
+        // Save the cleaned UA that was actually used to solve the challenge.
         webView?.settings?.userAgentString
             ?.takeIf { it.isNotBlank() }
             ?.let { Settings.saveCfUserAgent(it) }
 
-        Log.d(TAG, "✅ Saved cookies for $currentHost: $cookieStr")
+        Log.d(TAG, "✅ Saved cookies for ${allHosts.size} AnimePahe hosts: $cookieStr")
         updateStatus("✅ Done! Cloudflare bypassed.")
         notifyFinished(true)
 

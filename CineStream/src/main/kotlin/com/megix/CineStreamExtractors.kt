@@ -98,17 +98,39 @@ object CineStreamExtractors {
         val cookies = killer.savedCookies[host]?.takeIf { it.isNotEmpty() } ?: return
         val cookie = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
         if (!cookie.contains("cf_clearance")) return
-        Settings.saveCookieForDomain(url, cookie)
-        Log.d(CF_LOG_TAG, "persistSolvedCookies: saved cf_clearance for $host")
-        // Persist the UA the clearance is bound to, so the saved cookie still
-        // validates after a process restart. Only the solver's real UA, never
-        // the fallback constant.
-        runCatching { com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent }
-            .getOrNull()?.takeIf { it.isNotBlank() }
-            ?.let {
-                Settings.saveCfUserAgent(it)
-                Log.d(CF_LOG_TAG, "persistSolvedCookies: saved solver UA ${it.take(80)}...")
-            }
+
+        // Save under ALL AnimePahe hosts so stream requests on any mirror
+        // can use the same clearance cookie.
+        val allHosts = linkedSetOf(
+            host,
+            "animepahe.pw",
+            "www.animepahe.pw",
+            "animepahe.org",
+            "www.animepahe.org",
+            "animepahe.com",
+            "www.animepahe.com",
+        ).filter { it.isNotBlank() }
+        allHosts.forEach { h ->
+            Settings.saveCookieForDomain(h, cookie)
+        }
+        Log.d(CF_LOG_TAG, "persistSolvedCookies: saved cf_clearance for ${allHosts.size} hosts")
+
+        // Clean the UA the same way the bypass WebView does, so the saved UA
+        // always matches what requests actually send. Cloudflare binds
+        // cf_clearance to the exact solving UA — a mismatch re-challenges.
+        val rawUa = runCatching {
+            com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: return
+
+        var cleanUa = Regex("Version/[0-9.]+\\s*")
+            .replace(rawUa.replace("; wv", ""), "")
+        cleanUa = cleanUa.replace("Android TV", "Android")
+        if (cleanUa.contains("Android") && !cleanUa.contains("Mobile")) {
+            cleanUa = cleanUa.replace("Safari/", "Mobile Safari/")
+        }
+
+        Settings.saveCfUserAgent(cleanUa)
+        Log.d(CF_LOG_TAG, "persistSolvedCookies: saved cleaned solver UA ${cleanUa.take(80)}...")
     }
 
 
