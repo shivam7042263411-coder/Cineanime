@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 521,
+    "version": 522,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v521: Phisher-style Cloudflare bypass WebView - purges stale cf_clearance/__cf_bm/cf_chl*, polls title + cookie jar every second, auto-saves clearance + solving UA and auto-dismisses, single dialog guard. Keeps manual Save Cookies + Close as fallback. Includes v520 device WebView UA, movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB logo any-language fallback (v510), fanart.tv logo fallback (v512), TMDB backdrop middle layer (v511).",
-    "fileSize": 795077,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v522: Phisher-style Cloudflare bypass WebView - purges stale cf_clearance/__cf_bm/cf_chl*, polls title + cookie jar every second, auto-saves clearance + solving UA and auto-dismisses, single dialog guard. The pre-playback probe now waits for the bypass result and retries once, so the first episode tap after a challenge succeeds. Includes v520 device WebView UA, movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB logo any-language fallback (v510), fanart.tv logo fallback (v512), TMDB backdrop middle layer (v511).",
+    "fileSize": 797000,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-dcf19123386347da5ed5cedda5e03692fd3097f05105adbafb90d53a26d31dc0"
+    "fileHash": "sha256-e6041109bbba7e39ba586eaa9e31972607befab932d38bf54194029a1a2a79b2"
   }
 ]
