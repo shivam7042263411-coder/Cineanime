@@ -19,6 +19,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -490,6 +491,22 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 ).apply { bottomMargin = 12 }
             }
             root.addView(progressBar)
+
+            // Retry Solve button — lets the user trigger another Cloudflare
+            // solve attempt if the automatic one didn't capture cf_clearance.
+            root.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                setPadding(0, 8, 0, 0)
+                addView(SettingsWidgets.pillBtn(context, "🔄 Retry Solve", Color.parseColor("#22C55E"), Color.parseColor("#0B1120"), Color.parseColor("#16A34A")) {
+                    purgeCfCookiesFromWebViewJar()
+                    webView?.clearCache(true)
+                    webView?.clearHistory()
+                    webView?.loadUrl(targetUrl)
+                    handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
+                    updateStatus("🔄 Retrying Cloudflare solve…")
+                })
+            })
         }
 
         val webViewContainer = FrameLayout(requireContext()).apply {
@@ -637,15 +654,18 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         webView?.loadUrl(targetUrl)
         handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
 
-        // Cloudflare sets cf_clearance asynchronously after JS runs.
-        // Re-check a couple of seconds after first paint to catch it early.
-        handler.postDelayed({
-            if (!cookiesSaved) {
-                webView?.let { wv ->
-                    checkForClearance(wv.url, wv.title ?: "")
+        // Cloudflare sets cf_clearance asynchronously after JS runs — check
+        // at multiple intervals to catch it early regardless of timing.
+        val checkDelays = longArrayOf(1000, 2500, 5000, 8000, 12000)
+        checkDelays.forEach { delay ->
+            handler.postDelayed({
+                if (!cookiesSaved) {
+                    webView?.let { wv ->
+                        checkForClearance(wv.url, wv.title ?: "")
+                    }
                 }
-            }
-        }, 3000L)
+            }, delay)
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -674,6 +694,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             mediaPlaybackRequiresUserGesture = false
             blockNetworkImage = false
             blockNetworkLoads = false
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
 
             // Use the raw WebView UA with minimal cleaning.
             // Over-cleaning makes Cloudflare fingerprint the client as suspicious
@@ -759,8 +781,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         if (targetHost.isNotBlank()) {
             urls.add(targetHost)
             urls.add("$targetHost/")
-            // Cloudflare often sets cf_clearance on the www subdomain too.
+            // Cloudflare often sets cf_clearance on www subdomain too.
             urls.add(targetHost.replace("animepahe.", "www.animepahe.") + "/")
+            // Also try without https:// prefix (some WebView builds need it).
+            urls.add(targetHost.replace("https://", ""))
         }
         urls.add("https://animepahe.pw/")
         urls.add("https://www.animepahe.pw/")
@@ -770,6 +794,13 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         urls.add("https://www.animepahe.com/")
         urls.add("https://challenges.cloudflare.com/")
         urls.add("https://cloudflare.com/")
+        // CookieManager sometimes needs the domain without scheme.
+        urls.add("animepahe.pw")
+        urls.add("www.animepahe.pw")
+        urls.add("animepahe.org")
+        urls.add("www.animepahe.org")
+        urls.add("animepahe.com")
+        urls.add("www.animepahe.com")
 
         val cookies = LinkedHashMap<String, String>()
         urls.forEach { url ->
@@ -796,9 +827,13 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             val cookieManager = CookieManager.getInstance()
             val hosts = linkedSetOf(
                 targetHost,
+                targetHost.replace("animepahe.", "www.animepahe."),
                 "https://animepahe.pw",
+                "https://www.animepahe.pw",
                 "https://animepahe.org",
+                "https://www.animepahe.org",
                 "https://animepahe.com",
+                "https://www.animepahe.com",
             )
 
             hosts.forEach { host ->
