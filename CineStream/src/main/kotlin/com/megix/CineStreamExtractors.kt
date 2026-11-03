@@ -200,6 +200,33 @@ object CineStreamExtractors {
         return false
     }
 
+    private fun parseCookieString(cookieStr: String): LinkedHashMap<String, String> {
+        val cookies = LinkedHashMap<String, String>()
+        if (cookieStr.isBlank()) return cookies
+        cookieStr.split(";").forEach { part ->
+            val trimmed = part.trim()
+            val eq = trimmed.indexOf('=')
+            if (eq > 0) {
+                val name = trimmed.substring(0, eq).trim()
+                val value = trimmed.substring(eq + 1).trim()
+                if (name.isNotEmpty() && value.isNotEmpty()) cookies[name] = value
+            }
+        }
+        return cookies
+    }
+
+    /**
+     * Saved/WebView cookies must win over a caller's raw Cookie header;
+     * otherwise a stale cf_clearance in that header keeps shadowing the fresh
+     * one and Cloudflare re-challenges even after a successful bypass.
+     */
+    private fun mergeCookieStrings(existing: String, fresh: String): String {
+        val merged = parseCookieString(existing)
+        merged.keys.removeAll { it == "cf_clearance" || it == "__cf_bm" || it.startsWith("cf_chl") }
+        merged.putAll(parseCookieString(fresh))
+        return merged.entries.joinToString("; ") { "${it.key}=${it.value}" }
+    }
+
     private fun injectWebviewCookies(url: String, headers: Map<String, String>): Map<String, String> {
         val match = Settings.hasCloudflareBypassForUrl(url)
         Log.d(CF_LOG_TAG, "injectWebviewCookies: match=$match url=$url")
@@ -213,8 +240,7 @@ object CineStreamExtractors {
         Log.d(CF_LOG_TAG, "injectWebviewCookies: injecting cookies for $url => ${cookieValue.take(50)}...")
 
         val merged = headers.toMutableMap()
-        val existingCookie = merged["Cookie"].orEmpty()
-        merged["Cookie"] = if (existingCookie.isBlank()) cookieValue else "$existingCookie; $cookieValue"
+        merged["Cookie"] = mergeCookieStrings(merged["Cookie"].orEmpty(), cookieValue)
         return merged
     }
 

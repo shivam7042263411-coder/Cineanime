@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 520,
+    "version": 521,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v520: single-instance Cloudflare bypass dialog, device WebView User-Agent (consistent with Client Hints and with request headers) and saved solver UA, so the challenge stops reloading. Still keeps the manual Save Cookies + Close UI and auto-popup on launch when no cookies are saved. Includes movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB logo any-language fallback (v510), fanart.tv logo fallback (v512), TMDB backdrop middle layer (v511).",
-    "fileSize": 787908,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v521: Phisher-style Cloudflare bypass WebView - purges stale cf_clearance/__cf_bm/cf_chl*, polls title + cookie jar every second, auto-saves clearance + solving UA and auto-dismisses, single dialog guard. Keeps manual Save Cookies + Close as fallback. Includes v520 device WebView UA, movie fix (v505), rate limit caching (v506), Simkl covers (v507), TMDB logo any-language fallback (v510), fanart.tv logo fallback (v512), TMDB backdrop middle layer (v511).",
+    "fileSize": 795077,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-8826e3eecb122703e921cc9e83eefb6831fb088ad6cb4243aae08902e2b6e80e"
+    "fileHash": "sha256-dcf19123386347da5ed5cedda5e03692fd3097f05105adbafb90d53a26d31dc0"
   }
 ]

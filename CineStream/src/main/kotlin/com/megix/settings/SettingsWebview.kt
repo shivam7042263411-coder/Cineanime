@@ -98,6 +98,103 @@ internal object SettingsWebView {
         }
     }
 
+    // ── Cloudflare bypass ────────────────────────────────────────────────
+    // Behaviour ported from Phisher's AnimePahe CloudflareWebViewDialog
+    // (GPLv3): purge stale clearance cookies, load the challenge in a clean
+    // WebView, poll the title + cookie jar every second, then persist the
+    // clearance and the UA that solved it before auto-dismissing.
+    private const val CF_POLL_INTERVAL_MS = 1000L
+    private const val CF_POLL_TIMEOUT_MS = 120_000L
+    private val CF_CHALLENGE_TITLES = listOf(
+        "just a moment",
+        "checking your browser",
+        "attention required",
+        "ddos-guard",
+        "one more step",
+    )
+
+    private fun hostUrl(url: String): String = runCatching {
+        val uri = android.net.Uri.parse(url)
+        if (uri.scheme.isNullOrBlank() || uri.host.isNullOrBlank()) url.trimEnd('/')
+        else "${uri.scheme}://${uri.host}"
+    }.getOrDefault(url.trimEnd('/'))
+
+    private fun isChallengeTitle(title: String): Boolean {
+        val lower = title.lowercase()
+        return CF_CHALLENGE_TITLES.any { lower.contains(it) }
+    }
+
+    private fun hasClearance(cookies: String): Boolean =
+        Regex("cf_clearance=([^;]+)").find(cookies)
+            ?.groupValues?.getOrNull(1)?.trim()?.length?.let { it >= 10 } == true
+
+    /** Merge the cookie jars of the current page, target and all AnimePahe mirrors. */
+    private fun extractCookies(webView: WebView, targetUrl: String): String {
+        val cookieManager = CookieManager.getInstance()
+        runCatching { cookieManager.flush() }
+        val targetHost = hostUrl(targetUrl)
+        val urls = linkedSetOf<String>()
+        webView.url?.takeIf { it.isNotBlank() }?.let { urls.add(it) }
+        if (targetUrl.isNotBlank()) urls.add(targetUrl)
+        if (targetHost.isNotBlank()) {
+            urls.add(targetHost)
+            urls.add("$targetHost/")
+        }
+        urls.add("https://animepahe.pw/")
+        urls.add("https://animepahe.org/")
+        urls.add("https://animepahe.com/")
+        urls.add("https://challenges.cloudflare.com/")
+        urls.add("https://cloudflare.com/")
+
+        val cookies = LinkedHashMap<String, String>()
+        urls.forEach { url ->
+            val raw = runCatching { cookieManager.getCookie(url) }.getOrNull()
+            if (!raw.isNullOrBlank()) {
+                raw.split(";").forEach { part ->
+                    val trimmed = part.trim()
+                    val eq = trimmed.indexOf('=')
+                    if (eq > 0) {
+                        val name = trimmed.substring(0, eq).trim()
+                        val value = trimmed.substring(eq + 1).trim()
+                        if (name.isNotEmpty() && value.isNotEmpty()) cookies[name] = value
+                    }
+                }
+            }
+        }
+        return cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+    }
+
+    /**
+     * Remove only Cloudflare's own cookies from the WebView jar. A stale
+     * cf_clearance/__cf_bm makes Cloudflare re-challenge forever, while the
+     * site's normal cookies must survive so the page still loads.
+     */
+    private fun purgeCfCookies(targetUrl: String) {
+        runCatching {
+            val cookieManager = CookieManager.getInstance()
+            val hosts = linkedSetOf(
+                hostUrl(targetUrl),
+                "https://animepahe.pw",
+                "https://animepahe.org",
+                "https://animepahe.com",
+            )
+            hosts.filter { it.isNotBlank() }.forEach { host ->
+                val url = host.trimEnd('/') + "/"
+                val existing = cookieManager.getCookie(url) ?: return@forEach
+                existing.split(";").forEach { part ->
+                    val name = part.trim().substringBefore('=').trim()
+                    if (name == "cf_clearance" || name == "__cf_bm" || name.startsWith("cf_chl")) {
+                        cookieManager.setCookie(
+                            url,
+                            "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/",
+                        )
+                    }
+                }
+            }
+            cookieManager.flush()
+        }
+    }
+
     fun showCloudflareBypass(context: Context, startUrl: String, onCookiesChanged: () -> Unit = {}) {
         if (cfBypassDialog?.isShowing == true) {
             Log.d(TAG, "Cloudflare bypass dialog already open, not stacking another")
@@ -114,16 +211,18 @@ internal object SettingsWebView {
 
         var currentUrl = targetUrl
         var dialogRef: Dialog? = null
+        var webViewRef: WebView? = null
+        var pollRunnable: Runnable? = null
+        var finished = false
 
         val statusText = TextView(context).apply {
             id = View.generateViewId()
-            text = targetUrl; textSize = 10f; setTextColor(theme.TEXT_SECONDARY); setSingleLine(true)
+            text = "Loading challenge page…"; textSize = 11f; setTextColor(theme.TEXT_SECONDARY)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        fun updateStatus(url: String) {
-            currentUrl = url
-            mainHandler.post { statusText.text = url }
+        fun updateStatus(message: String) {
+            mainHandler.post { statusText.text = message }
         }
 
         val progressBar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -143,30 +242,62 @@ internal object SettingsWebView {
         }
 
         fun refreshCookieDisplay(url: String) {
-            val cookies = CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() } ?: "<none>"
-            mainHandler.post {
-                cookieText.text = "Cookies: $cookies"
-            }
+            val cookies = extractCookies(webViewRef ?: return, targetUrl)
+                .takeIf { it.isNotBlank() } ?: "<none>"
+            mainHandler.post { cookieText.text = "Cookies: $cookies" }
             Log.d(TAG, "Cloudflare bypass cookies for $url: $cookies")
+        }
+
+        fun persistAndDismiss(cookies: String) {
+            if (finished || !hasClearance(cookies)) return
+            finished = true
+            pollRunnable?.let { mainHandler.removeCallbacks(it) }
+            mainHandler.removeCallbacksAndMessages(null)
+
+            val current = webViewRef?.url?.takeIf { it.startsWith("http") } ?: targetUrl
+            val currentHost = hostUrl(current)
+            // Only persist under the host that actually issued the clearance.
+            // Copying the same cf_clearance to a mirror would be rejected.
+            linkedSetOf(current, currentHost).filter { it.isNotBlank() }.forEach {
+                Settings.saveCookieForDomain(it, cookies)
+            }
+            Settings.saveCfUserAgent(webViewRef?.settings?.userAgentString ?: solvingUserAgent)
+
+            Log.d(TAG, "✅ Saved Cloudflare clearance for $currentHost: ${cookies.take(100)}...")
+            cookieText.text = "Cookies: $cookies"
+            cookieText.setTextColor(Color.parseColor("#4CAF50"))
+            statusText.text = "✅ Done! Cloudflare bypassed."
+            statusText.setTextColor(Color.parseColor("#4CAF50"))
+            progressBar.visibility = View.GONE
+            onCookiesChanged()
+            mainHandler.postDelayed({ dialogRef?.dismiss() }, 500L)
+        }
+
+        fun checkForClearance() {
+            val webView = webViewRef ?: return
+            if (finished) return
+            val cookies = extractCookies(webView, targetUrl)
+            val title = webView.title.orEmpty()
+            Log.d(TAG, "CF poll title='$title' cookies=${cookies.take(120)}")
+            if (hasClearance(cookies) && !isChallengeTitle(title)) {
+                persistAndDismiss(cookies)
+            } else if (isChallengeTitle(title)) {
+                updateStatus("🔄 Challenge active – solve the CAPTCHA above")
+            } else {
+                updateStatus("⏳ Waiting for verification…")
+            }
         }
 
         val cookieControls = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             setPadding(16.dp(context), 6.dp(context), 16.dp(context), 6.dp(context))
             addView(SettingsWidgets.pillBtn(context, "💾 Save Cookies", Color.parseColor("#10B981"), Color.parseColor("#0B1120"), Color.parseColor("#059669")) {
-                val cookies = CookieManager.getInstance().getCookie(currentUrl)
-                if (!cookies.isNullOrBlank()) {
-                    Settings.saveCookieForDomain(currentUrl, cookies)
-                    Settings.saveCookieForDomain(targetUrl, cookies)
-                    // Persist the UA this clearance is bound to, so requests made
-                    // after a process restart still send the matching UA.
-                    Settings.saveCfUserAgent(solvingUserAgent)
-                    Log.d(TAG, "Saved cookies for $currentUrl and $targetUrl: ${cookies.take(80)}...")
-                    refreshCookieDisplay(currentUrl)
-                    onCookiesChanged()
-                    Toast.makeText(context, "Cookies saved!", Toast.LENGTH_SHORT).show()
+                val webView = webViewRef
+                val cookies = if (webView != null) extractCookies(webView, targetUrl) else ""
+                if (hasClearance(cookies)) {
+                    persistAndDismiss(cookies)
                 } else {
-                    Toast.makeText(context, "No cookies to save", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "No cf_clearance yet — solve the challenge first", Toast.LENGTH_SHORT).show()
                 }
             })
         }
@@ -175,10 +306,15 @@ internal object SettingsWebView {
             layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
             setBackgroundColor(Color.WHITE)
             isFocusable = true; isFocusableInTouchMode = true
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
             settings.apply {
-                javaScriptEnabled = true; domStorageEnabled = true
-                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                javaScriptEnabled = true; domStorageEnabled = true; databaseEnabled = true
+                cacheMode = WebSettings.LOAD_DEFAULT
+                mediaPlaybackRequiresUserGesture = false
+                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                allowContentAccess = true; allowFileAccess = true
+                loadsImagesAutomatically = true
                 useWideViewPort = true; loadWithOverviewMode = true
                 setSupportZoom(false); builtInZoomControls = false
                 userAgentString = solvingUserAgent
@@ -186,38 +322,37 @@ internal object SettingsWebView {
                 javaScriptCanOpenWindowsAutomatically = true
             }
 
+            CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
+                    if (finished) return
                     progressBar.progress = newProgress
                     progressBar.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
+                    updateStatus("Loading… $newProgress%")
                 }
             }
 
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
-                    updateStatus(url)
-                    val savedCookie = Settings.getCookieForDomain(url)
-                    if (!savedCookie.isNullOrBlank()) {
-                        CookieManager.getInstance().setCookie(url, savedCookie)
-                        Log.d(TAG, "Loaded saved cookies for $url: ${savedCookie.take(50)}...")
-                        Toast.makeText(context, "Loaded saved cookies", Toast.LENGTH_SHORT).show()
-                    }
+                    currentUrl = url
+                    updateStatus("Loading challenge page…")
                     Log.d(TAG, "Cloudflare bypass WebView started: $url")
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
-                    updateStatus(url)
+                    currentUrl = url
                     view.evaluateJavascript(SPOOF_JS, null)
                     refreshCookieDisplay(url)
+                    checkForClearance()
                     Log.d(TAG, "Cloudflare bypass WebView finished: $url")
                 }
 
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
             }
         }
-
+        webViewRef = webView
         webViewContainer.addView(webView)
 
         val tvCursor = TvTouchCursor(context, webViewContainer, webView)
@@ -229,7 +364,7 @@ internal object SettingsWebView {
 
             addView(SettingsWidgets.accentBar(context, Color.parseColor("#22C55E"), Color.parseColor("#16A34A")))
             addView(TextView(context).apply {
-                text = "🌐 Cloudflare Bypass"; textSize = 14f; setTypeface(null, Typeface.BOLD)
+                text = "🛡️ AnimePahe – Cloudflare Bypass"; textSize = 14f; setTypeface(null, Typeface.BOLD)
                 setTextColor(theme.TEXT_PRIMARY)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
@@ -248,7 +383,13 @@ internal object SettingsWebView {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL; background = theme.colorDrawable(theme.BG_DARK)
-            addView(titleBar); addView(progressBar); addView(webViewContainer)
+            addView(titleBar)
+            addView(TextView(context).apply {
+                text = "Solve any CAPTCHA shown below. Cookies save and the dialog closes automatically once done."
+                textSize = 11f; setTextColor(theme.TEXT_SECONDARY)
+                setPadding(16.dp(context), 0, 16.dp(context), 6.dp(context))
+            })
+            addView(progressBar); addView(webViewContainer)
             addView(cookieControls)
             addView(cookieText)
             addView(LinearLayout(context).apply {
@@ -274,9 +415,12 @@ internal object SettingsWebView {
         }.apply {
             requestWindowFeature(Window.FEATURE_NO_TITLE); setContentView(root); setCancelable(true)
             setOnDismissListener {
+                finished = true
+                pollRunnable?.let { mainHandler.removeCallbacks(it) }
                 tvCursor.destroy()
                 webView.stopLoading(); webView.destroy()
-                cfBypassDialog = null
+                webViewRef = null
+                if (cfBypassDialog === this) cfBypassDialog = null
                 onCookiesChanged()
             }
             window?.apply {
@@ -300,10 +444,31 @@ internal object SettingsWebView {
 
         cfBypassDialog = dialogRef
 
+        // Phisher's key step: never let a stale clearance cookie follow us
+        // into a fresh challenge, or Cloudflare loops forever.
+        purgeCfCookies(targetUrl)
         webView.clearCache(true)
         webView.clearHistory()
         webView.loadUrl(targetUrl)
         webView.requestFocus()
+
+        pollRunnable = object : Runnable {
+            var elapsed = 0L
+            override fun run() {
+                if (finished) return
+                checkForClearance()
+                if (finished) return
+                elapsed += CF_POLL_INTERVAL_MS
+                if (elapsed >= CF_POLL_TIMEOUT_MS) {
+                    finished = true
+                    updateStatus("⏱️ Timed out — close and try again")
+                    mainHandler.postDelayed({ dialogRef?.dismiss() }, 1500L)
+                    return
+                }
+                mainHandler.postDelayed(this, CF_POLL_INTERVAL_MS)
+            }
+        }
+        pollRunnable?.let { mainHandler.postDelayed(it, CF_POLL_INTERVAL_MS) }
     }
 
     fun show(context: Context, type: LoginType, onToken: (String) -> Unit) {
