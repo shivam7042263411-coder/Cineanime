@@ -223,40 +223,43 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             )
         }
 
-        root.addView(TextView(requireContext()).apply {
-            text = "🛡️ AnimePahe – Cloudflare Bypass"
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            setPadding(0, 0, 0, 8)
-        })
+        // Invisible mode: skip all UI views, WebView runs in background.
+        if (webViewVisible) {
+            root.addView(TextView(requireContext()).apply {
+                text = "🛡️ AnimePahe – Cloudflare Bypass"
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                setPadding(0, 0, 0, 8)
+            })
 
-        statusText = TextView(requireContext()).apply {
-            text = "Loading challenge page…"
-            textSize = 13f
-            setTextColor(Color.parseColor("#A0A0B0"))
-            setPadding(0, 0, 0, 4)
+            statusText = TextView(requireContext()).apply {
+                text = "Loading challenge page…"
+                textSize = 13f
+                setTextColor(Color.parseColor("#A0A0B0"))
+                setPadding(0, 0, 0, 4)
+            }
+            root.addView(statusText)
+
+            root.addView(TextView(requireContext()).apply {
+                text = "Solve any CAPTCHA shown below. The dialog will close automatically once done."
+                textSize = 11f
+                setTextColor(Color.parseColor("#707080"))
+                setPadding(0, 0, 0, 12)
+            })
+
+            progressBar = ProgressBar(
+                requireContext(),
+                null,
+                android.R.attr.progressBarStyleHorizontal,
+            ).apply {
+                isIndeterminate = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { bottomMargin = 12 }
+            }
+            root.addView(progressBar)
         }
-        root.addView(statusText)
-
-        root.addView(TextView(requireContext()).apply {
-            text = "Solve any CAPTCHA shown below. The dialog will close automatically once done."
-            textSize = 11f
-            setTextColor(Color.parseColor("#707080"))
-            setPadding(0, 0, 0, 12)
-        })
-
-        progressBar = ProgressBar(
-            requireContext(),
-            null,
-            android.R.attr.progressBarStyleHorizontal,
-        ).apply {
-            isIndeterminate = true
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 12 }
-        }
-        root.addView(progressBar)
 
         val webViewContainer = FrameLayout(requireContext()).apply {
             layoutParams = LinearLayout.LayoutParams(

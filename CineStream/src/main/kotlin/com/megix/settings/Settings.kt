@@ -22,7 +22,7 @@ object Settings {
     const val NEW_PROVIDER_DEFAULT_ON  = "new_provider_default_on"
     const val CF_BYPASS_ENABLED        = "cloudflare_webview_bypass_enabled"
     const val CF_USER_AGENT_KEY        = "cf_user_agent"
-    const val CF_WEBVIEW_VISIBLE       = "cloudflare_webview_visible"
+    const val CF_WEBVIEW_HIDDEN        = "cloudflare_webview_hidden"
 
     // ── Per-domain cookie timestamp (Cloudflare bypass staleness) ────────
     private const val CF_COOKIE_SAVED_AT_PREFIX = "cf_cookie_saved_at_"
@@ -47,16 +47,22 @@ object Settings {
         getKey<Long>(cookieTsKeyForDomain(urlOrDomain))
 
     /**
-     * Returns true if the saved cookie for the domain is older than maxAgeMs,
-     * or if no cookie/timestamp exists at all.
+     * Returns true if the saved cookie for the domain is older than maxAgeMs.
+     * No cookie at all = stale. Cookie exists but no timestamp (older plugin version)
+     * = assume fresh, don't trigger a bypass unnecessarily.
      */
     fun isCookieStale(urlOrDomain: String, maxAgeMs: Long): Boolean {
-        val ts = getCookieTimestamp(urlOrDomain) ?: return true
+        val hasCookie = hasSavedCookieForDomain(urlOrDomain)
+        if (!hasCookie) return true
+        val ts = getCookieTimestamp(urlOrDomain) ?: return false
         return System.currentTimeMillis() - ts > maxAgeMs
     }
 
-    /** Is the Cloudflare bypass WebView visible (shown) or hidden (invisible solve)? */
-    fun cloudflareWebViewVisible(): Boolean = getKey<Boolean>(CF_WEBVIEW_VISIBLE) ?: true
+    /** Is the Cloudflare bypass WebView hidden (invisible solve)? When true, no UI is shown. */
+    fun cloudflareWebViewHidden(): Boolean = getKey<Boolean>(CF_WEBVIEW_HIDDEN) ?: false
+
+    /** Is the Cloudflare bypass WebView visible (shown)? Opposite of cloudflareWebViewHidden(). */
+    fun cloudflareWebViewVisible(): Boolean = !cloudflareWebViewHidden()
 
     fun saveCfUserAgent(userAgent: String) {
         if (userAgent.isNotBlank()) setKey(CF_USER_AGENT_KEY, userAgent.trim())

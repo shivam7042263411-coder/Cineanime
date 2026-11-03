@@ -244,9 +244,9 @@ internal object SettingsDialog {
             addView(buildToggleRow(
                 context,
                 "Hide Cloudflare WebView (invisible solve)",
-                "When on, the bypass WebView solves silently in the background. " +
+                "When on, the bypass WebView solves silently in the background with no UI shown. " +
                     "Turn off if Cloudflare ever shows a checkbox you need to tap.",
-                Settings.CF_WEBVIEW_VISIBLE, true, pending))
+                Settings.CF_WEBVIEW_HIDDEN, false, pending))
 
             addView(SettingsWidgets.divider(context))
 
