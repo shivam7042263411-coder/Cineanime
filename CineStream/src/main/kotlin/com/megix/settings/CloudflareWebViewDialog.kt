@@ -1,7 +1,10 @@
 package com.megix.settings
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.Dialog
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.DialogInterface
 import android.graphics.Canvas
 import android.graphics.Color
@@ -22,6 +25,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.WindowManager.LayoutParams
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -93,6 +97,233 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
         fun hasClearance(cookieStr: String): Boolean =
             extractClearanceToken(cookieStr)?.length?.let { it >= 10 } == true
+
+        /**
+         * Solve Cloudflare cookies with no UI shown. Creates a headless WebView,
+         * loads the challenge URL, polls for cf_clearance, saves it + the solving
+         * UA, then destroys the WebView. Used when the user enables "Hide Cloudflare
+         * WebView" in settings.
+         */
+        fun solveCookiesHeadless(
+            context: Context,
+            targetUrl: String,
+            onFinished: (Boolean) -> Unit
+        ) {
+            val activity = findActivity(context) ?: run {
+                Log.e(TAG, "Headless CF solve: no Activity found")
+                onFinished(false)
+                return
+            }
+            if (activity.isFinishing || activity.isDestroyed) {
+                onFinished(false)
+                return
+            }
+
+            val targetHost = runCatching {
+                val uri = Uri.parse(targetUrl)
+                "${uri.scheme}://${uri.host}"
+            }.getOrDefault(targetUrl)
+
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.setAcceptCookie(true)
+
+            val webView = WebView(context).apply {
+                layoutParams = ViewGroup.LayoutParams(1, 1)
+                visibility = View.GONE
+                isFocusable = false
+                isFocusableInTouchMode = false
+                setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
+                settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    databaseEnabled = true
+                    cacheMode = WebSettings.LOAD_DEFAULT
+                    mediaPlaybackRequiresUserGesture = false
+
+                    val originalUa = userAgentString ?: ""
+                    var cleanUa = Regex("Version/[0-9.]+\\s*")
+                        .replace(originalUa.replace("; wv", ""), "")
+                    cleanUa = cleanUa.replace("Android TV", "Android")
+                    if (cleanUa.contains("Android") && !cleanUa.contains("Mobile")) {
+                        cleanUa = cleanUa.replace("Safari/", "Mobile Safari/")
+                    }
+                    userAgentString = cleanUa
+
+                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    allowContentAccess = true
+                    allowFileAccess = true
+                    loadsImagesAutomatically = true
+                }
+            }
+
+            cookieManager.setAcceptThirdPartyCookies(webView, true)
+
+            val container = FrameLayout(context).apply {
+                layoutParams = ViewGroup.LayoutParams(1, 1)
+            }
+            container.addView(webView)
+
+            try {
+                (activity.window.decorView as ViewGroup).addView(container)
+            } catch (e: Exception) {
+                Log.e(TAG, "Headless CF solve: failed to attach WebView: ${e.message}")
+                onFinished(false)
+                return
+            }
+
+            val handler = Handler(Looper.getMainLooper())
+            var cookiesSaved = false
+            var hasNotified = false
+            var pollElapsedMs = 0L
+            val POLL_INTERVAL_MS = 1_000L
+            val POLL_TIMEOUT_MS = 120_000L
+
+            fun extractCookies(): String {
+                cookieManager.flush()
+                val urls = linkedSetOf<String>()
+                webView.url?.takeIf { it.isNotBlank() }?.let { urls.add(it) }
+                if (targetUrl.isNotBlank()) urls.add(targetUrl)
+                if (targetHost.isNotBlank()) {
+                    urls.add(targetHost)
+                    urls.add("$targetHost/")
+                }
+                urls.add("https://animepahe.pw/")
+                urls.add("https://animepahe.org/")
+                urls.add("https://animepahe.com/")
+                urls.add("https://challenges.cloudflare.com/")
+                urls.add("https://cloudflare.com/")
+
+                val cookies = LinkedHashMap<String, String>()
+                urls.forEach { url ->
+                    val raw = runCatching { cookieManager.getCookie(url) }.getOrNull()
+                    if (!raw.isNullOrBlank()) {
+                        raw.split(";").forEach { part ->
+                            val trimmed = part.trim()
+                            val eq = trimmed.indexOf('=')
+                            if (eq > 0) {
+                                val name = trimmed.substring(0, eq).trim()
+                                val value = trimmed.substring(eq + 1).trim()
+                                if (name.isNotEmpty() && value.isNotEmpty()) cookies[name] = value
+                            }
+                        }
+                    }
+                }
+                return cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+            }
+
+            fun purgeCfCookies() {
+                runCatching {
+                    val hosts = linkedSetOf(
+                        targetHost,
+                        "https://animepahe.pw",
+                        "https://animepahe.org",
+                        "https://animepahe.com",
+                    )
+                    hosts.forEach { host ->
+                        val url = "$host/"
+                        val existing = cookieManager.getCookie(url) ?: return@forEach
+                        existing.split(";").forEach { part ->
+                            val name = part.trim().substringBefore('=').trim()
+                            if (name == "cf_clearance" || name == "__cf_bm" || name.startsWith("cf_chl")) {
+                                cookieManager.setCookie(
+                                    url,
+                                    "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/",
+                                )
+                            }
+                        }
+                    }
+                    cookieManager.flush()
+                }
+            }
+
+            val pollRunnable = object : Runnable {
+                override fun run() {
+                    if (cookiesSaved || hasNotified || activity.isFinishing || activity.isDestroyed) {
+                        if (!hasNotified) {
+                            hasNotified = true
+                            handler.removeCallbacks(this)
+                            webView.stopLoading()
+                            webView.destroy()
+                            container.removeView(webView)
+                            try { (activity.window.decorView as ViewGroup).removeView(container) } catch (_: Exception) {}
+                            onFinished(false)
+                        }
+                        return
+                    }
+
+                    val cookieStr = extractCookies()
+                    val title = webView.title ?: ""
+                    Log.d(TAG, "Headless poll [$pollElapsedMs ms] title='$title' cookies → $cookieStr")
+
+                    val hasClearanceCookie = hasClearance(cookieStr)
+                    val isChallenge = isChallengeTitle(title)
+
+                    if (hasClearanceCookie && !isChallenge) {
+                        cookiesSaved = true
+                        val currentUrl = webView.url ?: targetUrl
+                        val currentHost = runCatching {
+                            val uri = Uri.parse(currentUrl)
+                            "${uri.scheme}://${uri.host}"
+                        }.getOrDefault(targetHost)
+
+                        Settings.saveCookieForDomain(currentHost, cookieStr)
+                        webView.settings.userAgentString
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { Settings.saveCfUserAgent(it) }
+
+                        Log.d(TAG, "Headless CF solve: ✅ Saved cookies for $currentHost")
+                        hasNotified = true
+                        handler.removeCallbacks(this)
+                        webView.stopLoading()
+                        webView.destroy()
+                        container.removeView(webView)
+                        try { (activity.window.decorView as ViewGroup).removeView(container) } catch (_: Exception) {}
+                        onFinished(true)
+                        return
+                    }
+
+                    pollElapsedMs += POLL_INTERVAL_MS
+                    if (pollElapsedMs >= POLL_TIMEOUT_MS) {
+                        Log.w(TAG, "Headless CF solve: ⏱️ Timed out after 120s")
+                        hasNotified = true
+                        handler.removeCallbacks(this)
+                        webView.stopLoading()
+                        webView.destroy()
+                        container.removeView(webView)
+                        try { (activity.window.decorView as ViewGroup).removeView(container) } catch (_: Exception) {}
+                        onFinished(false)
+                        return
+                    }
+
+                    handler.postDelayed(this, POLL_INTERVAL_MS)
+                }
+            }
+
+            purgeCfCookies()
+            cookieManager.flush()
+
+            webView.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    if (!cookiesSaved && !hasNotified) {
+                        handler.post(pollRunnable)
+                    }
+                }
+            }
+
+            webView.loadUrl(targetUrl)
+            handler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
+        }
+
+        private fun findActivity(context: Context): Activity? {
+            var ctx: Context? = context
+            while (ctx is ContextWrapper) {
+                if (ctx is Activity) return ctx
+                ctx = ctx.baseContext
+            }
+            return null
+        }
     }
 
     private var onFinished: ((Boolean) -> Unit)? = null

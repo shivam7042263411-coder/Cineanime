@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 525,
+    "version": 526,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v525: Fixed invisible WebView toggle (was inverted - now \"Hide\" actually hides the WebView). Fixed app-open cookie freshness check - cookies saved by older versions without a timestamp are treated as fresh so the bypass doesn't launch unnecessarily. Invisible mode now truly hides all UI (title, status, progress) - WebView solves in background. All v524 features retained: cookie age check on open, probe throttle once per minute, skip probe when cookie fresh, stream-link cache ~20 min, one canonical AnimePahe domain.",
-    "fileSize": 801939,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v526: Fixed invisible WebView toggle - now truly hides ALL UI when ON. Uses a headless WebView (no bottom sheet, no dialog) that solves Cloudflare cookies silently in the background. Fixed cookie freshness check - cookies saved by older versions without a timestamp are treated as fresh. All v525 features retained: cookie age check (~30 min) on app open, probe throttle once per minute, skip probe when cookie fresh, stream-link cache ~20 min, one canonical AnimePahe domain (.pw).",
+    "fileSize": 805724,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-ddccf633136a71f5fbd6d03d3e8be59d6429612eb65b597ed73b19e6bea335af"
+    "fileHash": "sha256-04c72ce61261fedccdcf19d524c23a28e7a2f4cc3e0c0ea79cbbe030cc9bff1d"
   }
 ]

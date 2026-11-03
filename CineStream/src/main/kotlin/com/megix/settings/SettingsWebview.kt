@@ -111,11 +111,27 @@ internal object SettingsWebView {
         val targetUrl = startUrl.trim().let {
             if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it"
         }
+
+        // Invisible mode: solve cookies headlessly with no UI shown.
+        if (!webViewVisible) {
+            Log.d(TAG, "Cloudflare bypass: starting invisible headless solve")
+            return runCatching {
+                CloudflareWebViewDialog.solveCookiesHeadless(activity, targetUrl) { success ->
+                    onCookiesChanged(success)
+                }
+                true
+            }.getOrElse {
+                Log.e(TAG, "Cloudflare bypass: headless solve failed: ${it.message}")
+                false
+            }
+        }
+
+        // Visible mode: show the bottom sheet dialog.
         return runCatching {
             CloudflareWebViewDialog.newInstance(
                 targetUrl,
                 startExpanded = false,
-                webViewVisible = webViewVisible,
+                webViewVisible = true,
                 onFinished = onCookiesChanged,
             )
                 .show(activity.supportFragmentManager, CF_FRAGMENT_TAG)
