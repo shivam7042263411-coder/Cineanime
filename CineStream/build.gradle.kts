@@ -1,6 +1,6 @@
 import org.jetbrains.kotlin.konan.properties.Properties
 
-version = 522
+version = 523
 android {
     defaultConfig {
         val properties = Properties()
@@ -14,6 +14,17 @@ android {
         buildConfigField("String", "MOVIEBLAST_API", "\"${properties.getProperty("MOVIEBLAST_API")}\"")
         buildConfigField("String", "MOVIEBLAST_KEY", "\"${properties.getProperty("MOVIEBLAST_KEY")}\"")
     }
+}
+
+dependencies {
+    // The Cloudflare bypass bottom sheet is a real BottomSheetDialogFragment,
+    // so these must be on the compile classpath. The app already ships them
+    // (appcompat 1.7.1, fragment-ktx 1.8.9, material 1.14.0); compileOnly
+    // keeps them out of the plugin dex.
+    val compileOnly by configurations
+    compileOnly("androidx.appcompat:appcompat:1.7.1")
+    compileOnly("androidx.fragment:fragment-ktx:1.8.9")
+    compileOnly("com.google.android.material:material:1.14.0")
 }
 
 cloudstream {

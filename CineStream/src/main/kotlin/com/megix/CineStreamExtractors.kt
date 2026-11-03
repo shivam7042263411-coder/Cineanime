@@ -60,16 +60,16 @@ object CineStreamExtractors {
     var context: Context? = null
 
     // Cloudflare binds cf_clearance to the exact User-Agent that solved the
-    // challenge. The solver (CloudflareKiller) uses the device's real WebView
-    // UA and records it in WebViewResolver.webViewUserAgent, so requests must
-    // follow that value — a hardcoded UA gets challenged again even with a
-    // perfectly valid cookie. That in-memory value dies with the process, so
-    // the solver's UA is persisted with the cookie and read back here; a
-    // saved clearance stays valid immediately after an app restart.
+    // challenge. Both solvers persist their UA at solve time: our bypass
+    // WebView saves the cleaned UA it actually used, and CloudflareKiller
+    // saves the in-memory one. The persisted value therefore always belongs
+    // to the cookie we inject, so it must win over the process-wide
+    // WebViewResolver value (which is a different, uncleaned string and can
+    // be stale). The in-memory value stays as a fallback only.
     fun currentCfUserAgent(): String =
-        runCatching { com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent }
-            .getOrNull()?.takeIf { it.isNotBlank() }
-            ?: Settings.getCfUserAgent()
+        Settings.getCfUserAgent()
+            ?: runCatching { com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent }
+                .getOrNull()?.takeIf { it.isNotBlank() }
             ?: CF_BYPASS_USER_AGENT
 
     // CloudflareKiller's init wipes the WebView cookie jar. Re-seed our
