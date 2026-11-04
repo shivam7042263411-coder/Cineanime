@@ -166,10 +166,15 @@ object Settings {
                     existing.split(";").forEach { part ->
                         val name = part.trim().substringBefore('=').trim()
                         if (name == "cf_clearance" || name == "__cf_bm" || name.startsWith("cf_chl")) {
-                            cookieManager.setCookie(
-                                url,
-                                "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/",
-                            )
+                            // A host-only delete misses a cookie stored with
+                            // an explicit Domain attribute, which made "Clear
+                            // all cookies" leave a usable token behind.
+                            listOf("", "; Domain=.${site.domain}", "; Domain=${site.domain}").forEach { domainAttr ->
+                                cookieManager.setCookie(
+                                    url,
+                                    "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/$domainAttr",
+                                )
+                            }
                         }
                     }
                 }

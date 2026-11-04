@@ -2,6 +2,7 @@ package com.megix
 
 import android.util.Log
 import com.lagradost.cloudstream3.app
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 // ── 1. Static APIs ──────────────────────────────────────────
@@ -73,12 +74,18 @@ private var _apiConfig: JSONObject? = null
 
 suspend fun init() {
     if (_apiConfig != null) return
+    // Bounded: CineStream.load() calls this inside runBlocking, so an
+    // unbounded fetch here delays the whole app start (very visible on TV).
+    // Timeout/error behaves exactly like the existing failure path: an empty
+    // config, with a log line.
     _apiConfig = runCatching {
-        JSONObject(app.get("https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json").text)
+        withTimeoutOrNull(8_000L) {
+            app.get("https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json").text
+        }?.let { JSONObject(it) }
     }.getOrElse {
         Log.e("CineStream", "Error loading dynamic API URLs: ${it.message}")
-        JSONObject()
-    }
+        null
+    } ?: JSONObject()
 }
 
 private fun api(key: String) = _apiConfig?.optString(key).orEmpty()

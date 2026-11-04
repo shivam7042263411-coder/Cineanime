@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 535,
+    "version": 536,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v535: Two new Cloudflare Bypass controls in Settings - 'Check cookies' and 'Clear all cookies' - both D-pad navigable for Android TV. Check sends one request with the saved cookie and UA and reports Valid / Invalid / No cookie / Couldn't check (a network error is never shown as valid). Clear removes every saved cookie and timestamp for all bypass hosts, purges clearance cookies from the shared WebView jar, and resets the in-memory validation window so playback probes immediately instead of scraping with nothing. Clearing uses a two-step press (no extra dialog) and the Clear button stays in place, greyed out, so TV focus does not jump. All v534 Cloudflare fixes retained.",
-    "fileSize": 818262,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v536: Fixes reported on Android TV. (1) The invisible Cloudflare solver now uses CloudStream's own proven attach pattern: full-size, alpha 0, touch-passthrough container at the bottom of the window, so the AnimePahe challenge can no longer show through or overlap the CineAnime home. (2) Cookies are now saved even when Cloudflare reuses the existing cf_clearance: a clearance already in the jar is accepted once the page has loaded past the challenge, instead of waiting 120s for a token Cloudflare never reissues (this is why Settings showed no saved cookie after a solve that actually worked). (3) 'Clear all cookies' now also deletes the Domain=.host form of the cookie, so the jar is really empty. (4) Dynamic API config load is bounded to 8s, so a slow GitHub fetch no longer delays app start. All v535 check/clear cookie actions retained.",
+    "fileSize": 819406,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-dc026d8c786bccc7aefb5df77aee5176a94156d6243e845ac482155565e62bf1"
+    "fileHash": "sha256-ff2400a650fad29e6ea8d2f1910dc4014df1009428f17a1e57536104c6e8d298"
   }
 ]

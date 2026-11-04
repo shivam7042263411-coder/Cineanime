@@ -96,21 +96,28 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 ?.groupValues?.getOrNull(1)?.trim()
 
         // cf_clearance is HttpOnly — document.cookie won't show it. We rely on
-        // CookieManager. The jar is purged before every solve, so any
-        // cf_clearance present was just issued: do not additionally wait for
-        // the page title to change. That lag made the WebView load the
-        // challenge 2-3 more times before saving.
+        // CookieManager. Presence alone is not enough for saving: see
+        // isUsableClearance below, which also checks freshness/page state.
         fun hasClearance(cookieStr: String): Boolean =
             cookieStr.contains("cf_clearance=")
 
         /**
-         * A clearance is usable only when it differs from the one already in
-         * the jar before this solve. Presence alone would accept a stale token
-         * and save a cookie Cloudflare already rejects.
+         * A clearance is usable when it is new, or when it is the token that was
+         * already in the jar and the page has genuinely loaded past the
+         * challenge. Requiring a *different* token made the solver ignore a
+         * perfectly valid existing cookie: the jar kept it, Cloudflare did not
+         * issue another, the poll timed out for 120s per round, and nothing was
+         * saved even though playback worked from the jar.
          */
-        fun isFreshClearance(cookieStr: String, previousToken: String?): Boolean {
+        fun isUsableClearance(
+            cookieStr: String,
+            previousToken: String?,
+            title: String,
+            pageLoaded: Boolean,
+        ): Boolean {
             val token = extractClearanceToken(cookieStr) ?: return false
-            return token != previousToken
+            if (token != previousToken) return true
+            return pageLoaded && title.isNotBlank() && !isChallengeTitle(title)
         }
 
         /**
@@ -190,27 +197,35 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
             cookieManager.setAcceptThirdPartyCookies(webView, true)
 
-            // A 1x1 GONE WebView gets no render surface, and Android TV then
-            // receives the interactive Turnstile (which never completes
-            // headlessly) while phones often get the passive one. Attach a
-            // real-sized WebView BEHIND the Activity content: Chromium renders
-            // and runs the challenge, but the app's own opaque content covers
-            // it so the user still sees nothing.
-            val container = FrameLayout(context).apply {
+            // A full-size WebView is required: Cloudflare's challenge checks
+            // that the page is rendered at a real size. The proven CloudStream
+            // pattern is to attach it behind the app content at full size with
+            // container alpha 0 — invisible to the user, still rendered by
+            // Chromium. Without alpha=0 the page showed through translucent TV
+            // home screens, which is exactly the overlap users reported.
+            val container = object : FrameLayout(context) {
+                // Never swallow touches the app content ignores.
+                override fun dispatchTouchEvent(ev: MotionEvent): Boolean = false
+            }.apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 )
+                alpha = 0f
                 isClickable = false
                 isFocusable = false
+                descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
             container.addView(webView, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ))
 
+            // CloudStream's own resolver prefers the decorView root; fall back
+            // to the content frame if the window is not available.
             val contentRoot = activity.findViewById<ViewGroup>(android.R.id.content)
-            val attachmentParent = contentRoot ?: (activity.window.decorView as? ViewGroup)
+            val attachmentParent = (activity.window?.decorView as? ViewGroup) ?: contentRoot
             try {
                 if (attachmentParent == null) {
                     Log.e(TAG, "Headless CF solve: no content root to attach WebView")
@@ -229,6 +244,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             var cookiesSaved = false
             var hasNotified = false
             var pollElapsedMs = 0L
+            var pageLoaded = false
             val POLL_INTERVAL_MS = 1_000L
             val POLL_TIMEOUT_MS = 120_000L
 
@@ -268,7 +284,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             // Clearance already in the jar before this solve. Deleting it
             // up-front is racy (setCookie deletions are queued and can land
             // after Cloudflare writes the new token, killing the first
-            // successful solve), so keep it and require a different token.
+            // successful solve), so keep it; the poll accepts it only once
+            // the page has loaded past the challenge (see isUsableClearance).
             var initialClearance = extractClearanceToken(extractCookies())
 
             val pollRunnable = object : Runnable {
@@ -290,7 +307,9 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     val title = webView.title ?: ""
                     Log.d(TAG, "Headless poll [$pollElapsedMs ms] title='$title' cookies → $cookieStr")
 
-                    val hasClearanceCookie = isFreshClearance(cookieStr, initialClearance)
+                    val hasClearanceCookie = isUsableClearance(
+                        cookieStr, initialClearance, title, pageLoaded,
+                    )
 
                     if (hasClearanceCookie) {
                         cookiesSaved = true
@@ -347,12 +366,14 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 }
             }
 
-            // Remember the pre-solve clearance; the poll accepts only a new one.
+            // Remember the pre-solve clearance; see isUsableClearance for when
+            // an unchanged token may be accepted.
             initialClearance = extractClearanceToken(extractCookies())
 
             webView.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
                 override fun onPageFinished(view: WebView?, url: String?) {
+                    pageLoaded = true
                     if (!cookiesSaved && !hasNotified) {
                         handler.post(pollRunnable)
                     }
@@ -393,6 +414,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
     // Cloudflare writes the new token). So keep it and require a new value.
     private var initialClearance: String? = null
 
+    // True once the visible WebView has completed a load. Used to accept the
+    // pre-existing token only when the page actually got past the challenge.
+    private var pageLoaded = false
+
     private val targetHost: String by lazy {
         runCatching {
             val uri = Uri.parse(targetUrl)
@@ -408,7 +433,9 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             val currentTitle = webView?.title ?: ""
             Log.d(TAG, "Poll [$pollElapsedMs ms] title='$currentTitle' cookies → $cookieStr")
 
-            val hasClearanceCookie = isFreshClearance(cookieStr, initialClearance)
+            val hasClearanceCookie = isUsableClearance(
+                cookieStr, initialClearance, currentTitle, pageLoaded,
+            )
             if (hasClearanceCookie) {
                 Log.d(TAG, "✅ Clearance cookie found! Saving.")
                 saveCookiesAndDismiss(cookieStr)
@@ -690,6 +717,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         // deletions can race the fresh cf_clearance Cloudflare writes and
         // wipe the first successful solve.
         initialClearance = extractClearanceToken(extractCookies())
+        pageLoaded = false
         webView?.loadUrl(targetUrl)
         handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
 
@@ -766,6 +794,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
                 val title = view?.title ?: ""
                 Log.d(TAG, "onPageFinished title='$title' url=$url")
+                pageLoaded = true
                 checkForClearance(url, title)
             }
         }
@@ -780,7 +809,9 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
      */
     private fun checkForClearance(url: String?, title: String) {
         val cookieStr = extractCookies()
-        val hasClearanceCookie = isFreshClearance(cookieStr, initialClearance)
+        val hasClearanceCookie = isUsableClearance(
+            cookieStr, initialClearance, title, pageLoaded,
+        )
         val isChallenge = isChallengeTitle(title)
 
         Log.d(TAG, "check title='$title' url=$url clearance=$hasClearanceCookie challenge=$isChallenge cookies=$cookieStr")
@@ -796,7 +827,9 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         // might not expose right away.
         webView?.evaluateJavascript("document.cookie") { cookieResult ->
             val jsCookie = cookieResult ?: ""
-            val jsHasClearance = isFreshClearance(jsCookie, initialClearance)
+            val jsHasClearance = isUsableClearance(
+                jsCookie, initialClearance, title, pageLoaded,
+            )
             Log.d(TAG, "JS document.cookie='$jsCookie' clearance=$jsHasClearance")
             if (jsHasClearance && !isChallenge) {
                 saveCookiesAndDismiss(jsCookie)
