@@ -11,7 +11,13 @@ import android.view.Gravity
 import android.view.View
 import android.webkit.CookieManager
 import android.widget.*
+import com.megix.CineStreamExtractors
 import com.megix.settings.SettingsTheme.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Assembles the full Settings AlertDialog and every collapsible card inside it.
@@ -234,6 +240,9 @@ internal object SettingsDialog {
         return buildCollapsibleCard(context, "🌐 Cloudflare Bypass", false,
             accentA = Color.parseColor("#22C55E"), accentB = Color.parseColor("#16A34A")) {
             val sites = Settings.getCloudflareBypassDomains()
+            // Refreshers for each site row, so clearing all cookies updates
+            // every "Saved / Not Saved" label without rebuilding the card.
+            val rowRefreshers = mutableListOf<() -> Unit>()
 
             addView(TextView(context).apply {
                 text = "Tap a site to open the browser and solve Cloudflare challenge:"; textSize = 12f; setTextColor(theme.TEXT_SECONDARY)
@@ -248,6 +257,107 @@ internal object SettingsDialog {
                     "Turn off if Cloudflare ever shows a checkbox you need to tap.",
                 Settings.CF_WEBVIEW_HIDDEN, true, pending))
 
+            // ── Cookie health: check validity / clear everything ──────
+            // Actions run immediately (they are not part of the pending-save
+            // map). Both buttons stay in the layout at all times so TV D-pad
+            // focus order never shifts; "Clear" is disabled when empty.
+            var checking = false
+            var clearArmed = false
+            val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+            val cookieStatus = TextView(context).apply {
+                text = ""; textSize = 12f
+                setTextColor(theme.TEXT_SECONDARY)
+                setPadding(2.dp(context), 8.dp(context), 0, 2.dp(context))
+            }
+
+            lateinit var checkBtn: TextView
+            checkBtn = SettingsWidgets.pillBtn(
+                context, "✓ Check cookies",
+                Color.parseColor("#22C55E"), Color.parseColor("#0B1120"), Color.parseColor("#16A34A"),
+            ) {
+                if (checking) return@pillBtn
+                checking = true
+                checkBtn.isEnabled = false
+                checkBtn.alpha = 0.5f
+                checkBtn.text = "Checking…"
+                cookieStatus.text = "Checking the saved cookie with Cloudflare…"
+                cookieStatus.setTextColor(theme.TEXT_SECONDARY)
+                uiScope.launch {
+                    val result = CineStreamExtractors.checkCookieValidity("https://animepahe.pw/")
+                    checking = false
+                    checkBtn.isEnabled = true
+                    checkBtn.alpha = 1f
+                    checkBtn.text = "✓ Check cookies"
+                    when (result.status) {
+                        CineStreamExtractors.CookieStatus.VALID -> {
+                            cookieStatus.text = "✓ AnimePahe cookie is valid (HTTP ${result.code})"
+                            cookieStatus.setTextColor(Color.parseColor("#22C55E"))
+                        }
+                        CineStreamExtractors.CookieStatus.INVALID -> {
+                            cookieStatus.text = "✗ AnimePahe cookie is invalid — Cloudflare is challenging. Solve it below."
+                            cookieStatus.setTextColor(Color.parseColor("#EF4444"))
+                        }
+                        CineStreamExtractors.CookieStatus.NO_COOKIE -> {
+                            cookieStatus.text = "No AnimePahe cookie saved yet. Solve it below."
+                            cookieStatus.setTextColor(Color.parseColor("#6B7280"))
+                        }
+                        CineStreamExtractors.CookieStatus.UNKNOWN -> {
+                            cookieStatus.text = "⚠ Couldn't check — no connection, or the request timed out."
+                            cookieStatus.setTextColor(Color.parseColor("#F59E0B"))
+                        }
+                    }
+                }
+            }
+
+            lateinit var clearBtn: TextView
+            clearBtn = SettingsWidgets.pillBtn(
+                context, "🧹 Clear all cookies",
+                Color.parseColor("#EF4444"), Color.parseColor("#0B1120"), Color.parseColor("#DC2626"),
+            ) {
+                if (!clearArmed) {
+                    // Two-step confirm: safer than an extra dialog on TV.
+                    clearArmed = true
+                    clearBtn.text = "Press again to clear"
+                    uiScope.launch {
+                        delay(3_000)
+                        if (clearArmed) {
+                            clearArmed = false
+                            clearBtn.text = "🧹 Clear all cookies"
+                        }
+                    }
+                    return@pillBtn
+                }
+                clearArmed = false
+                val cleared = Settings.clearAllCookies()
+                // Memory keeps a 2-minute "recently validated" window; without
+                // this the app would skip the bypass and scrape with nothing.
+                CineStreamExtractors.invalidateCookieCache()
+                clearBtn.text = "🧹 Clear all cookies"
+                clearBtn.isEnabled = false
+                clearBtn.isFocusable = false
+                clearBtn.alpha = 0.4f
+                cookieStatus.text = "✓ Cleared $cleared saved cookie(s). Solve again when needed."
+                cookieStatus.setTextColor(Color.parseColor("#22C55E"))
+                rowRefreshers.forEach { it() }
+                Toast.makeText(context, "Cloudflare cookies cleared", Toast.LENGTH_SHORT).show()
+            }
+
+            val hasAnyCookie = sites.any { Settings.hasSavedCookieForDomain(it.domain) }
+            clearBtn.isEnabled = hasAnyCookie
+            clearBtn.isFocusable = hasAnyCookie
+            clearBtn.alpha = if (hasAnyCookie) 1f else 0.4f
+
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 6.dp(context), 0, 0)
+                addView(checkBtn)
+                addView(SettingsWidgets.hSpacer(context, 8))
+                addView(clearBtn)
+            })
+            addView(cookieStatus)
+
             addView(SettingsWidgets.divider(context))
 
             // Site buttons with save/remove options
@@ -259,6 +369,13 @@ internal object SettingsDialog {
                     val hasCookie = Settings.hasSavedCookieForDomain(domainObj.domain)
                     statusText.text = if (hasCookie) "✓ Saved" else "Not Saved"
                     statusText.setTextColor(if (hasCookie) Color.parseColor("#10B981") else Color.parseColor("#6B7280"))
+
+                    // Keep "Clear all cookies" enabled state in sync as rows
+                    // are solved or removed individually.
+                    val anyCookie = sites.any { Settings.hasSavedCookieForDomain(it.domain) }
+                    clearBtn.isEnabled = anyCookie
+                    clearBtn.isFocusable = anyCookie
+                    clearBtn.alpha = if (anyCookie) 1f else 0.4f
 
                     actionsRow.removeAllViews()
                     actionsRow.addView(SettingsWidgets.pillBtn(context, "🌐 Open", Color.parseColor("#60A5FA"), Color.parseColor("#0B1120"), Color.parseColor("#1D4ED8")) {
@@ -301,6 +418,7 @@ internal object SettingsDialog {
                     addView(actionsRow)
 
                     refreshRow()
+                    rowRefreshers.add(::refreshRow)
                 })
             }
         }

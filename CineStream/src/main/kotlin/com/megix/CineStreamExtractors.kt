@@ -271,6 +271,53 @@ object CineStreamExtractors {
         return valid
     }
 
+    /** Outcome of a user-triggered cookie check (settings screen). */
+    enum class CookieStatus { VALID, INVALID, NO_COOKIE, UNKNOWN }
+
+    data class CookieCheckResult(val status: CookieStatus, val code: Int = 0)
+
+    /**
+     * Deliberate, user-triggered validation. Unlike [isCookieValid] this does
+     * not fail open: a timeout or network error is reported as UNKNOWN so the
+     * settings screen never shows "Valid" for an unchecked cookie.
+     */
+    suspend fun checkCookieValidity(
+        url: String = "https://animepahe.pw/",
+    ): CookieCheckResult = withContext(Dispatchers.IO) {
+        if (!Settings.hasSavedCookieForDomain(url)) {
+            return@withContext CookieCheckResult(CookieStatus.NO_COOKIE)
+        }
+        val headers = mapOf(
+            "User-Agent" to currentCfUserAgent(),
+            "Accept-Language" to "en-US,en;q=0.9",
+            "Referer" to url,
+        )
+        val effective = injectWebviewCookies(url, headers)
+        val verdict = withTimeoutOrNull(15_000L) {
+            val response = runCatching {
+                app.get(url, headers = effective, allowRedirects = true)
+            }.getOrNull() ?: return@withTimeoutOrNull null
+            if (isCloudflarePage(response)) {
+                CookieCheckResult(CookieStatus.INVALID, response.code)
+            } else {
+                lastValidatedAt[bypassKey(url)] = System.currentTimeMillis()
+                CookieCheckResult(CookieStatus.VALID, response.code)
+            }
+        }
+        Log.d(CF_LOG_TAG, "checkCookieValidity: $url -> ${verdict?.status}")
+        verdict ?: CookieCheckResult(CookieStatus.UNKNOWN)
+    }
+
+    /**
+     * Forget everything learnt in memory about cookie validity. Clearing the
+     * saved cookies without this leaves a 2-minute "recently validated"
+     * window that would skip the bypass and scrape with no cookie at all.
+     */
+    fun invalidateCookieCache() {
+        lastValidatedAt.clear()
+        lastProbeAt.clear()
+    }
+
     // Proactive pre-flight probe: fires before every playback attempt.
     // If Cloudflare challenges (cookies expired/invalid), pops the bypass
     // WebView so the user can solve immediately — no manual settings needed.
@@ -369,6 +416,15 @@ object CineStreamExtractors {
 
     /** True once an Activity exists, so app-open validation can wait for it. */
     fun hasForegroundActivity(): Boolean = currentActivity() != null
+
+    /**
+     * Drop in-memory trust so the next request validates instead of reusing a
+     * 2-minute "already valid" window. Called after the user clears cookies.
+     */
+    fun invalidateCookieTrust() {
+        lastValidatedAt.clear()
+        lastProbeAt.clear()
+    }
 
     private fun parseCookieString(cookieStr: String): LinkedHashMap<String, String> {
         val cookies = LinkedHashMap<String, String>()
