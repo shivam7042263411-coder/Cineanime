@@ -2,6 +2,7 @@ package com.megix.settings
 
 import android.content.Context
 import android.net.Uri
+import android.webkit.CookieManager
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKey
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.setKey
 import com.megix.ProviderRegistry
@@ -133,6 +134,49 @@ object Settings {
 
     fun removeCookieForDomain(urlOrDomain: String) {
         setKey(cookieKeyForDomain(urlOrDomain), null as String?)
+        setKey(cookieTsKeyForDomain(urlOrDomain), null as Long?)
+    }
+
+    /**
+     * Remove every Cloudflare cookie this plugin saved, plus the clearance
+     * cookies still sitting in the shared WebView jar. Clearing only the
+     * stored copy would not be enough: [CineStreamExtractors.injectWebviewCookies]
+     * falls back to the jar, so a still-valid clearance would keep working and
+     * "clear cookies" would look like a no-op.
+     *
+     * @return how many domains had a saved cookie.
+     */
+    fun clearAllCookies(): Int {
+        var cleared = 0
+        getCloudflareBypassDomains().forEach { site ->
+            if (hasSavedCookieForDomain(site.domain)) cleared++
+            setKey(cookieKeyForDomain(site.domain), null as String?)
+            setKey(cookieTsKeyForDomain(site.domain), null as Long?)
+        }
+
+        runCatching {
+            val cookieManager = CookieManager.getInstance()
+            getCloudflareBypassDomains().forEach { site ->
+                linkedSetOf(
+                    "https://${site.domain}",
+                    "https://www.${site.domain}",
+                ).forEach { host ->
+                    val url = "$host/"
+                    val existing = cookieManager.getCookie(url) ?: return@forEach
+                    existing.split(";").forEach { part ->
+                        val name = part.trim().substringBefore('=').trim()
+                        if (name == "cf_clearance" || name == "__cf_bm" || name.startsWith("cf_chl")) {
+                            cookieManager.setCookie(
+                                url,
+                                "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/",
+                            )
+                        }
+                    }
+                }
+            }
+            cookieManager.flush()
+        }
+        return cleared
     }
 
     // ── Dynamic Provider Maps ────────────────────────────────
