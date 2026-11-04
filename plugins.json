@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 532,
+    "version": 533,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v532: Fixed TV failures. Saved cookies are now validated with a real request instead of trusted by age, so a revoked-but-recent cf_clearance can no longer leave the app with 'Saved' cookies that scrape nothing: app-open and playback probes only skip after a challenge-free response (2-minute trust window). Invisible solve now attaches a real-sized WebView behind the app content instead of a 1x1 GONE view, so Chromium actually renders the challenge on Android TV; it also saves the cookie under every AnimePahe host and purges www variants. If the invisible solve still fails (interactive TV checkbox), it falls back to the visible sheet instead of silently doing nothing. All v531 features retained: no buttons in the normal flow, invisible mode default, per-request UA consistency, probe throttle, stream-link cache.",
-    "fileSize": 808588,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v533: Fixed the WebView solving 2-3 extra times after verification. Two causes: (1) saving waited for the page title to stop saying 'Just a moment', which lags behind the cf_clearance cookie, so Cloudflare reloaded and re-solved - clearance now saves the moment it appears (the jar is purged before every solve, so a clearance seen at that point is fresh); (2) a second solver could start while the sheet was open - playback's probe was throttled out, then CloudflareKiller's init wiped the shared cookie jar and destroyed the clearance just earned. In-flight bypass solves are now joined instead of raced. All v532 features retained: real cookie validation on app open and before playback, real-sized invisible WebView behind app content on TV, all-host cookie save, visible-sheet fallback, no buttons, invisible default.",
+    "fileSize": 809410,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-b24901b60c5b38fc091af29aca9a2c97b00ab902ef463f75ec33817e465501e4"
+    "fileHash": "sha256-3c178e77510d5883392c31ca78126718f9875295bed79a6bd8b83c943bd8cca9"
   }
 ]
