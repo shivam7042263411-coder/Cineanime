@@ -113,6 +113,11 @@ internal object SettingsWebView {
         }
 
         // Invisible mode: solve cookies headlessly with no UI shown.
+        // When the user has chosen invisible mode, never fall back to a
+        // visible sheet — that would pop a Cloudflare dialog over their
+        // content, which is exactly what they turned this off to avoid.
+        // If the headless solve can't crack it (e.g. Turnstile checkbox),
+        // we fail silently rather than showing a popup over the player.
         if (!webViewVisible) {
             Log.d(TAG, "Cloudflare bypass: starting invisible headless solve")
             return runCatching {
@@ -120,27 +125,14 @@ internal object SettingsWebView {
                     if (success) {
                         onCookiesChanged(true)
                     } else {
-                        // The invisible solver failed (on TVs Cloudflare can
-                        // serve an interactive checkbox a headless WebView can
-                        // never press). Fall back to the visible sheet so the
-                        // user is never left with a silent no-op.
-                        Log.w(TAG, "Cloudflare bypass: invisible solve failed, falling back to visible sheet")
-                        activity.runOnUiThread {
-                            val shown = runCatching {
-                                showCloudflareBypass(
-                                    activity,
-                                    targetUrl,
-                                    webViewVisible = true,
-                                    onCookiesChanged = onCookiesChanged,
-                                )
-                            }.getOrDefault(false)
-                            if (!shown) onCookiesChanged(false)
-                        }
+                        Log.w(TAG, "Cloudflare bypass: invisible solve failed, no visible fallback")
+                        onCookiesChanged(false)
                     }
                 }
                 true
             }.getOrElse {
                 Log.e(TAG, "Cloudflare bypass: headless solve failed: ${it.message}")
+                onCookiesChanged(false)
                 false
             }
         }
