@@ -188,10 +188,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     }
                     userAgentString = cleanUa
 
-                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                    allowContentAccess = true
-                    allowFileAccess = true
-                    loadsImagesAutomatically = true
+                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                    allowContentAccess = false
+                    allowFileAccess = false
+                    loadsImagesAutomatically = false
                 }
             }
 
@@ -374,9 +374,6 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
                 override fun onPageFinished(view: WebView?, url: String?) {
                     pageLoaded = true
-                    if (!cookiesSaved && !hasNotified) {
-                        handler.post(pollRunnable)
-                    }
                 }
             }
 
@@ -761,18 +758,18 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             mediaPlaybackRequiresUserGesture = false
             blockNetworkImage = false
             blockNetworkLoads = false
-            setSupportMultipleWindows(true)
-            javaScriptCanOpenWindowsAutomatically = true
+            setSupportMultipleWindows(false)
+            javaScriptCanOpenWindowsAutomatically = false
 
             // Use the raw WebView UA with minimal cleaning.
             // Over-cleaning makes Cloudflare fingerprint the client as suspicious
             // and it never issues a cf_clearance cookie.
             userAgentString = userAgentString ?: ""
 
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            allowContentAccess = true
-            allowFileAccess = true
-            loadsImagesAutomatically = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            allowContentAccess = false
+            allowFileAccess = false
+            loadsImagesAutomatically = false
         }
 
         wv.webChromeClient = object : WebChromeClient() {
@@ -803,9 +800,9 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
     }
 
     /**
-     * Check for cf_clearance using both CookieManager and direct JavaScript
-     * document.cookie access. Cloudflare sometimes sets cookies via JS that
-     * CookieManager doesn't immediately see, so we read document.cookie too.
+     * Check for cf_clearance using CookieManager. cf_clearance is HttpOnly, so
+     * JavaScript's document.cookie can never see it — CookieManager is the
+     * only source of truth.
      */
     private fun checkForClearance(url: String?, title: String) {
         val cookieStr = extractCookies()
@@ -820,20 +817,6 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             Log.d(TAG, "Clearance verified! Saving cookies.")
             saveCookiesAndDismiss(cookieStr)
             return
-        }
-
-        // Also probe document.cookie directly via JavaScript — Cloudflare
-        // may set cf_clearance via document.cookie which CookieManager
-        // might not expose right away.
-        webView?.evaluateJavascript("document.cookie") { cookieResult ->
-            val jsCookie = cookieResult ?: ""
-            val jsHasClearance = isUsableClearance(
-                jsCookie, initialClearance, title, pageLoaded,
-            )
-            Log.d(TAG, "JS document.cookie='$jsCookie' clearance=$jsHasClearance")
-            if (jsHasClearance && !isChallenge) {
-                saveCookiesAndDismiss(jsCookie)
-            }
         }
 
         if (isChallenge) {
@@ -896,7 +879,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
     private fun saveCookiesAndDismiss(cookieStr: String) {
         if (cookiesSaved) return
-        if (!hasClearance(cookieStr) && !startExpanded) {
+        if (!hasClearance(cookieStr)) {
             Log.w(TAG, "saveCookiesAndDismiss called without clearance cookie, skipping")
             return
         }
@@ -972,6 +955,11 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
     override fun onDestroyView() {
         handler.removeCallbacks(cookiePollRunnable)
+        // If the view is destroyed without a successful save (e.g. the user
+        // dismissed the dialog mid-solve), fail the in-flight bypass so the
+        // next probe can show the dialog again instead of waiting on a stale
+        // deferred forever.
+        notifyFinished(false)
         webView?.stopLoading()
         webView?.destroy()
         webView = null
