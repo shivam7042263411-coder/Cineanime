@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 531,
+    "version": 532,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v531: Completely automatic, invisible Cloudflare bypass \u2014 no buttons, no UI, no dialog. Invisible mode is now ON by default: when you open the app and the saved cookie is older than ~30 minutes, a headless WebView solves Cloudflare silently in the background, saves the cookie + solving UA under all AnimePahe domains (.pw, .org, .com, www.), then destroys itself. You just open the app and play \u2014 no pop-ups, no buttons, nothing to tap. The visible bottom sheet remains available only if you turn OFF \"Hide Cloudflare WebView\" in settings. All v530 fixes retained: lenient cf_clearance detection, cleaned UA consistency, cookie saved under all 8 hosts, probe throttle once per minute, skip probe when cookie fresh, stream-link cache ~20 min.",
-    "fileSize": 807429,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v532: Fixed TV failures. Saved cookies are now validated with a real request instead of trusted by age, so a revoked-but-recent cf_clearance can no longer leave the app with 'Saved' cookies that scrape nothing: app-open and playback probes only skip after a challenge-free response (2-minute trust window). Invisible solve now attaches a real-sized WebView behind the app content instead of a 1x1 GONE view, so Chromium actually renders the challenge on Android TV; it also saves the cookie under every AnimePahe host and purges www variants. If the invisible solve still fails (interactive TV checkbox), it falls back to the visible sheet instead of silently doing nothing. All v531 features retained: no buttons in the normal flow, invisible mode default, per-request UA consistency, probe throttle, stream-link cache.",
+    "fileSize": 808588,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-9d1312f1292c701b136744871964cdd1d57dd7f495241deb65b61538e1ed5efe"
+    "fileHash": "sha256-b24901b60c5b38fc091af29aca9a2c97b00ab902ef463f75ec33817e465501e4"
   }
 ]
