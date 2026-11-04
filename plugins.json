@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 533,
+    "version": 534,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v533: Fixed the WebView solving 2-3 extra times after verification. Two causes: (1) saving waited for the page title to stop saying 'Just a moment', which lags behind the cf_clearance cookie, so Cloudflare reloaded and re-solved - clearance now saves the moment it appears (the jar is purged before every solve, so a clearance seen at that point is fresh); (2) a second solver could start while the sheet was open - playback's probe was throttled out, then CloudflareKiller's init wiped the shared cookie jar and destroyed the clearance just earned. In-flight bypass solves are now joined instead of raced. All v532 features retained: real cookie validation on app open and before playback, real-sized invisible WebView behind app content on TV, all-host cookie save, visible-sheet fallback, no buttons, invisible default.",
-    "fileSize": 809410,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v534: Fixed the remaining cloudflare failures on Android TV and the 2-3 repeated solves on phones. (1) The bypass WebView now opens at app open again: plugin.load receives the Application context, so the old code had no Activity and silently skipped - it now waits for CloudStream's foreground Activity. (2) The pre-solve cookie purge was removed: setCookie deletions are queued and could land after Cloudflare wrote the new token, deleting the first successful solve; the solver now remembers the old token and only accepts a different one. (3) cf_clearance from challenges.cloudflare.com/cloudflare.com is no longer merged into the saved AnimePahe cookie, which previously produced 'Saved' cookies that yielded no streams. (4) AnimePahe requests that hit a challenge now always use this plugin's bypass (forced, site-root target) instead of a racing CloudflareKiller whose init wipes the shared cookie jar; in-flight solves and throttling are keyed by site, not exact URL. All prior features retained: real cookie validation, invisible-by-default real-sized solver, visible fallback, no buttons.",
+    "fileSize": 810651,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-3c178e77510d5883392c31ca78126718f9875295bed79a6bd8b83c943bd8cca9"
+    "fileHash": "sha256-2d4bb5c9be43c88bc24bb2420ac21d0ae636fa996e98ab5ed69bce037b1ced8e"
   }
 ]
