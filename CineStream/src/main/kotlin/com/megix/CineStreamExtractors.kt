@@ -63,9 +63,14 @@ object CineStreamExtractors {
     private val lastProbeAt = ConcurrentHashMap<String, Long>()
     private const val PROBE_THROTTLE_MS = 60_000L // once per minute per URL
 
-    // If the saved cookie is younger than this, assume it's still valid and
-    // skip the pre-flight probe entirely.
-    private const val PROBE_SKIP_MAX_AGE_MS = 30L * 60 * 1000 // 30 minutes
+    // A saved cookie is only trusted after a request proved it works. The
+    // old age heuristic (cookie younger than 30 min = fine) left users with
+    // "Saved" cookies that Cloudflare had already revoked, so the bypass
+    // never opened and nothing scraped. Timestamps are set only by a
+    // challenge-free response, and a short trust window keeps binge taps
+    // from probing every episode.
+    private val lastValidatedAt = ConcurrentHashMap<String, Long>()
+    private const val VALIDATION_TRUST_MS = 2 * 60 * 1000L // 2 minutes
 
     // Cloudflare binds cf_clearance to the exact User-Agent that solved the
     // challenge. Both solvers persist their UA at solve time: our bypass
@@ -211,14 +216,38 @@ object CineStreamExtractors {
             body.contains("Enable JavaScript and cookies to continue")
     }
 
+    // One cheap request that answers the only question that matters: does
+    // AnimePahe currently accept the saved cookies? Follows redirects so a
+    // mirror hop into a challenge is still detected. Network errors return
+    // true (unknown) — popping a WebView while the connection is down would
+    // not help and would only confuse the user.
+    suspend fun isCookieValid(url: String = "https://animepahe.pw/"): Boolean {
+        // Same headers the provider sends, so a challenge here means the
+        // cookie is genuinely rejected rather than a missing-header quirk.
+        val headers = mutableMapOf(
+            "User-Agent" to currentCfUserAgent(),
+            "Accept-Language" to "en-US,en;q=0.9",
+            "Referer" to url,
+        )
+        val effective = injectWebviewCookies(url, headers)
+        val response = runCatching {
+            app.get(url, headers = effective, allowRedirects = true)
+        }.getOrNull() ?: return true
+        val valid = !isCloudflarePage(response)
+        if (valid) lastValidatedAt[url] = System.currentTimeMillis()
+        Log.d(CF_LOG_TAG, "isCookieValid: $url valid=$valid code=${response.code}")
+        return valid
+    }
+
     // Proactive pre-flight probe: fires before every playback attempt.
     // If Cloudflare challenges (cookies expired/invalid), pops the bypass
     // WebView so the user can solve immediately — no manual settings needed.
     suspend fun probeAndResolveIfNeeded(url: String = "https://animepahe.pw/"): Boolean {
-        // Skip probe entirely if we have a fresh saved cookie — no need to
-        // poke AnimePahe when we already know the cookie is good.
-        if (!Settings.isCookieStale(url, PROBE_SKIP_MAX_AGE_MS)) {
-            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: cookie fresh, skipping probe for $url")
+        // Only a recent successful validation buys a skip. Cookie age alone
+        // is not evidence that cf_clearance is still accepted.
+        val validatedAt = lastValidatedAt[url] ?: 0L
+        if (System.currentTimeMillis() - validatedAt < VALIDATION_TRUST_MS) {
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: recently validated, skipping for $url")
             return false
         }
 
@@ -231,9 +260,8 @@ object CineStreamExtractors {
         }
         lastProbeAt[url] = now
 
-        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: probing $url")
-        val probe = runCatching { cfGet(url, mapOf(), allowRedirects = false) }.getOrNull()
-        if (probe == null || !isCloudflarePage(probe)) return false
+        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: validating $url")
+        if (isCookieValid(url)) return false
 
         val ctx = context ?: return false
         if (ctx !is Activity) return false
@@ -256,10 +284,10 @@ object CineStreamExtractors {
         }
         if (!solved) return false
 
-        // The request that triggered the probe was challenged; retry once the
-        // fresh clearance is persisted, exactly like Phisher's wait-and-retry.
-        val retry = runCatching { cfGet(url, mapOf(), allowRedirects = false) }.getOrNull()
-        return retry != null && !isCloudflarePage(retry)
+        // The request that triggered the probe was challenged; re-validate
+        // once the fresh clearance is persisted, exactly like Phisher's
+        // wait-and-retry.
+        return isCookieValid(url)
     }
 
     private fun parseCookieString(cookieStr: String): LinkedHashMap<String, String> {

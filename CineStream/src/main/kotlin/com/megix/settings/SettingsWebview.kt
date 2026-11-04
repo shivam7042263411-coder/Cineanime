@@ -117,7 +117,26 @@ internal object SettingsWebView {
             Log.d(TAG, "Cloudflare bypass: starting invisible headless solve")
             return runCatching {
                 CloudflareWebViewDialog.solveCookiesHeadless(activity, targetUrl) { success ->
-                    onCookiesChanged(success)
+                    if (success) {
+                        onCookiesChanged(true)
+                    } else {
+                        // The invisible solver failed (on TVs Cloudflare can
+                        // serve an interactive checkbox a headless WebView can
+                        // never press). Fall back to the visible sheet so the
+                        // user is never left with a silent no-op.
+                        Log.w(TAG, "Cloudflare bypass: invisible solve failed, falling back to visible sheet")
+                        activity.runOnUiThread {
+                            val shown = runCatching {
+                                showCloudflareBypass(
+                                    activity,
+                                    targetUrl,
+                                    webViewVisible = true,
+                                    onCookiesChanged = onCookiesChanged,
+                                )
+                            }.getOrDefault(false)
+                            if (!shown) onCookiesChanged(false)
+                        }
+                    }
                 }
                 true
             }.getOrElse {

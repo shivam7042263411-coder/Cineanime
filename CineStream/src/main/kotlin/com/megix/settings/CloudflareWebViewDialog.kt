@@ -131,10 +131,14 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             cookieManager.setAcceptCookie(true)
 
             val webView = WebView(context).apply {
-                layoutParams = ViewGroup.LayoutParams(1, 1)
-                visibility = View.GONE
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
                 isFocusable = false
                 isFocusableInTouchMode = false
+                isClickable = false
+                setBackgroundColor(Color.TRANSPARENT)
                 setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
                 settings.apply {
@@ -162,13 +166,35 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
             cookieManager.setAcceptThirdPartyCookies(webView, true)
 
+            // A 1x1 GONE WebView gets no render surface, and Android TV then
+            // receives the interactive Turnstile (which never completes
+            // headlessly) while phones often get the passive one. Attach a
+            // real-sized WebView BEHIND the Activity content: Chromium renders
+            // and runs the challenge, but the app's own opaque content covers
+            // it so the user still sees nothing.
             val container = FrameLayout(context).apply {
-                layoutParams = ViewGroup.LayoutParams(1, 1)
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+                isClickable = false
+                isFocusable = false
             }
-            container.addView(webView)
+            container.addView(webView, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ))
 
+            val contentRoot = activity.findViewById<ViewGroup>(android.R.id.content)
+            val attachmentParent = contentRoot ?: (activity.window.decorView as? ViewGroup)
             try {
-                (activity.window.decorView as ViewGroup).addView(container)
+                if (attachmentParent == null) {
+                    Log.e(TAG, "Headless CF solve: no content root to attach WebView")
+                    onFinished(false)
+                    return
+                }
+                // Index 0 = behind whatever the Activity is showing.
+                attachmentParent.addView(container, 0)
             } catch (e: Exception) {
                 Log.e(TAG, "Headless CF solve: failed to attach WebView: ${e.message}")
                 onFinished(false)
@@ -217,11 +243,17 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
             fun purgeCfCookies() {
                 runCatching {
+                    val wwwHost = if (targetHost.startsWith("https://www.")) targetHost
+                        else targetHost.replace("://", "://www.")
                     val hosts = linkedSetOf(
                         targetHost,
+                        wwwHost,
                         "https://animepahe.pw",
+                        "https://www.animepahe.pw",
                         "https://animepahe.org",
+                        "https://www.animepahe.org",
                         "https://animepahe.com",
+                        "https://www.animepahe.com",
                     )
                     hosts.forEach { host ->
                         val url = "$host/"
@@ -249,7 +281,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                             webView.stopLoading()
                             webView.destroy()
                             container.removeView(webView)
-                            try { (activity.window.decorView as ViewGroup).removeView(container) } catch (_: Exception) {}
+                            try { (container.parent as? ViewGroup)?.removeView(container) } catch (_: Exception) {}
                             onFinished(false)
                         }
                         return
@@ -270,18 +302,32 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                             "${uri.scheme}://${uri.host}"
                         }.getOrDefault(targetHost)
 
-                        Settings.saveCookieForDomain(currentHost, cookieStr)
+                        // Same as the visible path: save under every AnimePahe
+                        // host so a clearance earned on .pw also covers the
+                        // mirror the stream request actually hits.
+                        val allHosts = linkedSetOf(
+                            currentHost,
+                            targetHost,
+                            "https://animepahe.pw",
+                            "https://www.animepahe.pw",
+                            "https://animepahe.org",
+                            "https://www.animepahe.org",
+                            "https://animepahe.com",
+                            "https://www.animepahe.com",
+                        ).filter { it.isNotBlank() }
+                        allHosts.forEach { host -> Settings.saveCookieForDomain(host, cookieStr) }
+
                         webView.settings.userAgentString
                             ?.takeIf { it.isNotBlank() }
                             ?.let { Settings.saveCfUserAgent(it) }
 
-                        Log.d(TAG, "Headless CF solve: ✅ Saved cookies for $currentHost")
+                        Log.d(TAG, "Headless CF solve: ✅ Saved cookies for ${allHosts.size} hosts")
                         hasNotified = true
                         handler.removeCallbacks(this)
                         webView.stopLoading()
                         webView.destroy()
                         container.removeView(webView)
-                        try { (activity.window.decorView as ViewGroup).removeView(container) } catch (_: Exception) {}
+                        try { (container.parent as? ViewGroup)?.removeView(container) } catch (_: Exception) {}
                         onFinished(true)
                         return
                     }
@@ -294,7 +340,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                         webView.stopLoading()
                         webView.destroy()
                         container.removeView(webView)
-                        try { (activity.window.decorView as ViewGroup).removeView(container) } catch (_: Exception) {}
+                        try { (container.parent as? ViewGroup)?.removeView(container) } catch (_: Exception) {}
                         onFinished(false)
                         return
                     }
@@ -812,9 +858,11 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
     private fun purgeCfCookiesFromWebViewJar() {
         runCatching {
             val cookieManager = CookieManager.getInstance()
+            val wwwHost = if (targetHost.startsWith("https://www.")) targetHost
+                else targetHost.replace("://", "://www.")
             val hosts = linkedSetOf(
                 targetHost,
-                targetHost.replace("animepahe.", "www.animepahe."),
+                wwwHost,
                 "https://animepahe.pw",
                 "https://www.animepahe.pw",
                 "https://animepahe.org",

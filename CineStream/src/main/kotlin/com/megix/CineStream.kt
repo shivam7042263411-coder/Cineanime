@@ -1,16 +1,17 @@
 package com.megix
 
-import android.app.Activity
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import com.lagradost.cloudstream3.MainActivity
 import com.lagradost.cloudstream3.CloudStreamApp.Companion.getKey
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
 import com.megix.settings.Settings
-import com.megix.settings.SettingsWebView.showCloudflareBypass
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 @CloudstreamPlugin
@@ -93,34 +94,23 @@ open class CineStream: Plugin() {
         // Store context (Activity) for Cloudflare bypass dialogs during playback
         CineStreamExtractors.context = context
 
-        // ── Auto Cloudflare bypass popup ─────────────────────────────────────
-        // If no AnimePahe cookies are saved yet, or if the saved cookie is
-        // older than ~30 minutes (likely expired), pop the bypass WebView so
-        // the user gets a fresh cookie before they try to play anything.
-        val COOKIE_REFRESH_MAX_AGE_MS = 30L * 60 * 1000 // 30 minutes
-
-        val needsBypassOrRefresh = listOf("animepahe.pw", "animepahe.org", "animepahe.com")
-            .any { domain ->
-                val hasCookie = Settings.hasSavedCookieForDomain(domain)
-                if (!hasCookie) true
-                else Settings.isCookieStale(domain, COOKIE_REFRESH_MAX_AGE_MS)
-            }
-
-        if (needsBypassOrRefresh && context is Activity && !autoBypassShown) {
+        // ── Validate the saved Cloudflare cookie on app open ──────────────
+        // Age alone is not proof: cf_clearance can be revoked or expire
+        // server-side while the timestamp is still young. A cookie that
+        // merely *exists* used to skip both the bypass and the playback
+        // probe, which left "Saved" cookies scraping nothing. Validate with
+        // one real request instead, off the main thread, and only open the
+        // bypass when the probe is actually challenged.
+        if (!autoBypassShown) {
             autoBypassShown = true
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    showCloudflareBypass(
-                        context,
-                        "https://animepahe.pw/",
-                        webViewVisible = Settings.cloudflareWebViewVisible(),
-                    ) {
-                        Log.d("CineStreamAutoBypass", "Cookies refreshed via bypass dialog")
-                    }
-                } catch (e: Throwable) {
-                    Log.e("CineStreamAutoBypass", "Failed to refresh cookies: ${e.message}")
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                delay(5_000) // let the Activity settle before any dialog
+                runCatching {
+                    CineStreamExtractors.probeAndResolveIfNeeded("https://animepahe.pw/")
+                }.onFailure {
+                    Log.e("CineStreamAutoBypass", "Cookie validation failed: ${it.message}")
                 }
-            }, 5000) // 5s delay so the Activity is fully ready for Dialogs
+            }
         }
     }
 }

@@ -42,21 +42,13 @@ object Settings {
         setKey(cookieTsKeyForDomain(urlOrDomain), ts)
     }
 
-    /** Read the last save time for a domain, or null if never saved. */
+    /**
+     * Last saved time for a domain, used for diagnostics/logging only.
+     * Validity is decided by a real request (CineStreamExtractors.isCookieValid),
+     * never by age: a cookie can be revoked while its timestamp is young.
+     */
     fun getCookieTimestamp(urlOrDomain: String): Long? =
         getKey<Long>(cookieTsKeyForDomain(urlOrDomain))
-
-    /**
-     * Returns true if the saved cookie for the domain is older than maxAgeMs.
-     * No cookie at all = stale. Cookie exists but no timestamp (older plugin version)
-     * = assume fresh, don't trigger a bypass unnecessarily.
-     */
-    fun isCookieStale(urlOrDomain: String, maxAgeMs: Long): Boolean {
-        val hasCookie = hasSavedCookieForDomain(urlOrDomain)
-        if (!hasCookie) return true
-        val ts = getCookieTimestamp(urlOrDomain) ?: return false
-        return System.currentTimeMillis() - ts > maxAgeMs
-    }
 
     /** Is the Cloudflare bypass WebView hidden (invisible solve)? When true, no UI is shown. */
     fun cloudflareWebViewHidden(): Boolean = getKey<Boolean>(CF_WEBVIEW_HIDDEN) ?: true
