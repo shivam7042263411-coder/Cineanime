@@ -104,7 +104,16 @@ open class CineStream: Plugin() {
         if (!autoBypassShown) {
             autoBypassShown = true
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                delay(5_000) // let the Activity settle before any dialog
+                // Plugin.load runs while the app is still starting, so the
+                // stored context is the Application. Wait for a real Activity
+                // instead of probing with no way to show the bypass (that is
+                // why the WebView sometimes never appeared at app open).
+                var waited = 0L
+                while (!CineStreamExtractors.hasForegroundActivity() && waited < 20_000L) {
+                    delay(500)
+                    waited += 500
+                }
+                delay(2_000) // let the Activity settle before any dialog
                 runCatching {
                     CineStreamExtractors.probeAndResolveIfNeeded("https://animepahe.pw/")
                 }.onFailure {

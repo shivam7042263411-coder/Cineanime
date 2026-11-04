@@ -104,6 +104,28 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             cookieStr.contains("cf_clearance=")
 
         /**
+         * A clearance is usable only when it differs from the one already in
+         * the jar before this solve. Presence alone would accept a stale token
+         * and save a cookie Cloudflare already rejects.
+         */
+        fun isFreshClearance(cookieStr: String, previousToken: String?): Boolean {
+            val token = extractClearanceToken(cookieStr) ?: return false
+            return token != previousToken
+        }
+
+        /**
+         * Turnstile runs in an iframe on cloudflare.com; a cf_clearance seen
+         * there belongs to Cloudflare, not to the site being solved. Merging
+         * it into the site cookie string is how a "Saved" cookie could be
+         * useless for AnimePahe requests.
+         */
+        fun isCloudflareOwnHost(url: String): Boolean {
+            val host = runCatching { Uri.parse(url).host?.lowercase() }.getOrNull()
+                ?: return false
+            return host == "cloudflare.com" || host.endsWith(".cloudflare.com")
+        }
+
+        /**
          * Solve Cloudflare cookies with no UI shown. Creates a headless WebView,
          * loads the challenge URL, polls for cf_clearance, saves it + the solving
          * UA, then destroys the WebView. Used when the user enables "Hide Cloudflare
@@ -213,8 +235,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             fun extractCookies(): String {
                 cookieManager.flush()
                 val urls = linkedSetOf<String>()
-                webView.url?.takeIf { it.isNotBlank() }?.let { urls.add(it) }
-                if (targetUrl.isNotBlank()) urls.add(targetUrl)
+                webView.url
+                    ?.takeIf { it.isNotBlank() && !isCloudflareOwnHost(it) }
+                    ?.let { urls.add(it) }
+                if (targetUrl.isNotBlank() && !isCloudflareOwnHost(targetUrl)) urls.add(targetUrl)
                 if (targetHost.isNotBlank()) {
                     urls.add(targetHost)
                     urls.add("$targetHost/")
@@ -222,8 +246,6 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 urls.add("https://animepahe.pw/")
                 urls.add("https://animepahe.org/")
                 urls.add("https://animepahe.com/")
-                urls.add("https://challenges.cloudflare.com/")
-                urls.add("https://cloudflare.com/")
 
                 val cookies = LinkedHashMap<String, String>()
                 urls.forEach { url ->
@@ -243,36 +265,11 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 return cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
             }
 
-            fun purgeCfCookies() {
-                runCatching {
-                    val wwwHost = if (targetHost.startsWith("https://www.")) targetHost
-                        else targetHost.replace("://", "://www.")
-                    val hosts = linkedSetOf(
-                        targetHost,
-                        wwwHost,
-                        "https://animepahe.pw",
-                        "https://www.animepahe.pw",
-                        "https://animepahe.org",
-                        "https://www.animepahe.org",
-                        "https://animepahe.com",
-                        "https://www.animepahe.com",
-                    )
-                    hosts.forEach { host ->
-                        val url = "$host/"
-                        val existing = cookieManager.getCookie(url) ?: return@forEach
-                        existing.split(";").forEach { part ->
-                            val name = part.trim().substringBefore('=').trim()
-                            if (name == "cf_clearance" || name == "__cf_bm" || name.startsWith("cf_chl")) {
-                                cookieManager.setCookie(
-                                    url,
-                                    "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/",
-                                )
-                            }
-                        }
-                    }
-                    cookieManager.flush()
-                }
-            }
+            // Clearance already in the jar before this solve. Deleting it
+            // up-front is racy (setCookie deletions are queued and can land
+            // after Cloudflare writes the new token, killing the first
+            // successful solve), so keep it and require a different token.
+            var initialClearance = extractClearanceToken(extractCookies())
 
             val pollRunnable = object : Runnable {
                 override fun run() {
@@ -293,7 +290,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     val title = webView.title ?: ""
                     Log.d(TAG, "Headless poll [$pollElapsedMs ms] title='$title' cookies → $cookieStr")
 
-                    val hasClearanceCookie = hasClearance(cookieStr)
+                    val hasClearanceCookie = isFreshClearance(cookieStr, initialClearance)
 
                     if (hasClearanceCookie) {
                         cookiesSaved = true
@@ -350,8 +347,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 }
             }
 
-            purgeCfCookies()
-            cookieManager.flush()
+            // Remember the pre-solve clearance; the poll accepts only a new one.
+            initialClearance = extractClearanceToken(extractCookies())
 
             webView.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
@@ -390,6 +387,12 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
     private var hasNotified = false
     private var pollElapsedMs = 0L
 
+    // cf_clearance value that was already in the jar before this solve. A
+    // stale clearance must not be mistaken for the fresh one, and deleting it
+    // up-front is racy (setCookie deletions are queued and can land after
+    // Cloudflare writes the new token). So keep it and require a new value.
+    private var initialClearance: String? = null
+
     private val targetHost: String by lazy {
         runCatching {
             val uri = Uri.parse(targetUrl)
@@ -405,7 +408,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             val currentTitle = webView?.title ?: ""
             Log.d(TAG, "Poll [$pollElapsedMs ms] title='$currentTitle' cookies → $cookieStr")
 
-            val hasClearanceCookie = hasClearance(cookieStr)
+            val hasClearanceCookie = isFreshClearance(cookieStr, initialClearance)
             if (hasClearanceCookie) {
                 Log.d(TAG, "✅ Clearance cookie found! Saving.")
                 saveCookiesAndDismiss(cookieStr)
@@ -683,7 +686,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         cookieManager.setAcceptCookie(true)
         webView?.let { cookieManager.setAcceptThirdPartyCookies(it, true) }
         cookieManager.flush()
-        purgeCfCookiesFromWebViewJar()
+        // Record what is already there instead of deleting it: queued
+        // deletions can race the fresh cf_clearance Cloudflare writes and
+        // wipe the first successful solve.
+        initialClearance = extractClearanceToken(extractCookies())
         webView?.loadUrl(targetUrl)
         handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
 
@@ -774,7 +780,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
      */
     private fun checkForClearance(url: String?, title: String) {
         val cookieStr = extractCookies()
-        val hasClearanceCookie = hasClearance(cookieStr)
+        val hasClearanceCookie = isFreshClearance(cookieStr, initialClearance)
         val isChallenge = isChallengeTitle(title)
 
         Log.d(TAG, "check title='$title' url=$url clearance=$hasClearanceCookie challenge=$isChallenge cookies=$cookieStr")
@@ -790,7 +796,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         // might not expose right away.
         webView?.evaluateJavascript("document.cookie") { cookieResult ->
             val jsCookie = cookieResult ?: ""
-            val jsHasClearance = hasClearance(jsCookie)
+            val jsHasClearance = isFreshClearance(jsCookie, initialClearance)
             Log.d(TAG, "JS document.cookie='$jsCookie' clearance=$jsHasClearance")
             if (jsHasClearance && !isChallenge) {
                 saveCookiesAndDismiss(jsCookie)
@@ -809,8 +815,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         cookieManager.flush()
 
         val urls = linkedSetOf<String>()
-        webView?.url?.takeIf { it.isNotBlank() }?.let { urls.add(it) }
-        if (targetUrl.isNotBlank()) urls.add(targetUrl)
+        webView?.url
+            ?.takeIf { it.isNotBlank() && !isCloudflareOwnHost(it) }
+            ?.let { urls.add(it) }
+        if (targetUrl.isNotBlank() && !isCloudflareOwnHost(targetUrl)) urls.add(targetUrl)
         if (targetHost.isNotBlank()) {
             urls.add(targetHost)
             urls.add("$targetHost/")
@@ -825,8 +833,6 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         urls.add("https://www.animepahe.org/")
         urls.add("https://animepahe.com/")
         urls.add("https://www.animepahe.com/")
-        urls.add("https://challenges.cloudflare.com/")
-        urls.add("https://cloudflare.com/")
         // CookieManager sometimes needs the domain without scheme.
         urls.add("animepahe.pw")
         urls.add("www.animepahe.pw")
@@ -853,39 +859,6 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             }
         }
         return cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
-    }
-
-    private fun purgeCfCookiesFromWebViewJar() {
-        runCatching {
-            val cookieManager = CookieManager.getInstance()
-            val wwwHost = if (targetHost.startsWith("https://www.")) targetHost
-                else targetHost.replace("://", "://www.")
-            val hosts = linkedSetOf(
-                targetHost,
-                wwwHost,
-                "https://animepahe.pw",
-                "https://www.animepahe.pw",
-                "https://animepahe.org",
-                "https://www.animepahe.org",
-                "https://animepahe.com",
-                "https://www.animepahe.com",
-            )
-
-            hosts.forEach { host ->
-                val url = "$host/"
-                val existing = cookieManager.getCookie(url) ?: return@forEach
-                existing.split(";").forEach { part ->
-                    val name = part.trim().substringBefore('=').trim()
-                    if (name == "cf_clearance" || name == "__cf_bm" || name.startsWith("cf_chl")) {
-                        cookieManager.setCookie(
-                            url,
-                            "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/",
-                        )
-                    }
-                }
-            }
-            cookieManager.flush()
-        }
     }
 
     private fun saveCookiesAndDismiss(cookieStr: String) {

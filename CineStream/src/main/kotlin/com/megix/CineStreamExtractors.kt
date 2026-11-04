@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.*
 import android.app.Activity
 import android.content.Context
+import android.net.Uri
 import android.webkit.CookieManager
 import com.lagradost.nicehttp.NiceResponse
 import com.lagradost.api.Log
@@ -81,6 +82,19 @@ object CineStreamExtractors {
     // in-flight solve instead of racing it.
     private val bypassInFlight = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private const val BYPASS_WAIT_MS = 150_000L
+
+    // State is keyed by site, not by exact URL. Requests carry query strings
+    // (search, episode API), so a per-URL key meant a request never joined
+    // the sheet that was already solving and the throttle never applied.
+    private fun bypassKey(url: String): String {
+        val host = runCatching { Uri.parse(url).host?.lowercase() }.getOrNull() ?: return url
+        return when {
+            host == "animepahe.pw" || host.endsWith(".animepahe.pw") -> "animepahe"
+            host == "animepahe.org" || host.endsWith(".animepahe.org") -> "animepahe"
+            host == "animepahe.com" || host.endsWith(".animepahe.com") -> "animepahe"
+            else -> host
+        }
+    }
 
     // Cloudflare binds cf_clearance to the exact User-Agent that solved the
     // challenge. Both solvers persist their UA at solve time: our bypass
@@ -216,14 +230,22 @@ object CineStreamExtractors {
 
     private fun isCloudflarePage(response: NiceResponse): Boolean {
         if (response.code in listOf(403, 503)) return true
+        // Cloudflare marks managed challenges explicitly.
+        if (response.headers["cf-mitigated"]?.contains("challenge", ignoreCase = true) == true) return true
         // Cloudflare also serves the interstitial with HTTP 200. Without this
         // check the caller parses the challenge HTML as if it were data and
-        // the solver never runs.
+        // the solver never runs. Newer interstitials changed their wording,
+        // so match every known variant instead of only the old one.
         val body = runCatching { response.text }.getOrNull() ?: return false
-        return body.contains("Just a moment") ||
-            body.contains("cf-chl") ||
-            body.contains("Attention Required! | Cloudflare") ||
-            body.contains("Enable JavaScript and cookies to continue")
+        val lower = body.lowercase()
+        return lower.contains("just a moment") ||
+            lower.contains("cf-chl") ||
+            lower.contains("attention required") ||
+            lower.contains("enable javascript and cookies") ||
+            lower.contains("verifying you are human") ||
+            lower.contains("checking your browser") ||
+            lower.contains("one more step") ||
+            lower.contains("cf-mitigated")
     }
 
     // One cheap request that answers the only question that matters: does
@@ -244,7 +266,7 @@ object CineStreamExtractors {
             app.get(url, headers = effective, allowRedirects = true)
         }.getOrNull() ?: return true
         val valid = !isCloudflarePage(response)
-        if (valid) lastValidatedAt[url] = System.currentTimeMillis()
+        if (valid) lastValidatedAt[bypassKey(url)] = System.currentTimeMillis()
         Log.d(CF_LOG_TAG, "isCookieValid: $url valid=$valid code=${response.code}")
         return valid
     }
@@ -252,48 +274,64 @@ object CineStreamExtractors {
     // Proactive pre-flight probe: fires before every playback attempt.
     // If Cloudflare challenges (cookies expired/invalid), pops the bypass
     // WebView so the user can solve immediately — no manual settings needed.
-    suspend fun probeAndResolveIfNeeded(url: String = "https://animepahe.pw/"): Boolean {
+    suspend fun probeAndResolveIfNeeded(
+        url: String = "https://animepahe.pw/",
+        force: Boolean = false,
+    ): Boolean {
+        val key = bypassKey(url)
+
         // A solve is already in progress (e.g. the app-open sheet). Wait for
         // it rather than letting CloudflareKiller start a competing solve.
-        bypassInFlight[url]?.let { pending ->
+        bypassInFlight[key]?.let { pending ->
             Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: joining in-flight bypass for $url")
             val solved = withTimeoutOrNull(BYPASS_WAIT_MS) { pending.await() } ?: false
             Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: in-flight bypass finished, success=$solved")
             return solved
         }
 
-        // Only a recent successful validation buys a skip. Cookie age alone
-        // is not evidence that cf_clearance is still accepted.
-        val validatedAt = lastValidatedAt[url] ?: 0L
-        if (System.currentTimeMillis() - validatedAt < VALIDATION_TRUST_MS) {
-            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: recently validated, skipping for $url")
+        // Never load an API/JSON endpoint in the solver: it must fetch a page
+        // that can present the challenge. Site root is the safe target.
+        val solveUrl = if (key == "animepahe") "https://animepahe.pw/" else url
+
+        if (!force) {
+            // Only a recent successful validation buys a skip. Cookie age
+            // alone is not evidence that cf_clearance is still accepted.
+            val validatedAt = lastValidatedAt[key] ?: 0L
+            if (System.currentTimeMillis() - validatedAt < VALIDATION_TRUST_MS) {
+                Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: recently validated, skipping for $url")
+                return false
+            }
+
+            // Throttle: at most one probe per site per minute to avoid rate limits.
+            val last = lastProbeAt[key] ?: 0L
+            if (System.currentTimeMillis() - last < PROBE_THROTTLE_MS) {
+                Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: throttled probe for $url")
+                return false
+            }
+        }
+        lastProbeAt[key] = System.currentTimeMillis()
+
+        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: validating $solveUrl")
+        if (isCookieValid(solveUrl)) return false
+
+        // plugin.load() is handed the application context, which has no
+        // FragmentManager — that is why no WebView ever appeared at app open.
+        // Fall back to CloudStream's current Activity.
+        val ctx = currentActivity()
+        if (ctx == null) {
+            Log.w(CF_LOG_TAG, "probeAndResolveIfNeeded: no Activity available for bypass")
             return false
         }
-
-        // Throttle: at most one probe per minute per URL to avoid rate limits.
-        val now = System.currentTimeMillis()
-        val last = lastProbeAt[url] ?: 0L
-        if (now - last < PROBE_THROTTLE_MS) {
-            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: throttled probe for $url")
-            return false
-        }
-        lastProbeAt[url] = now
-
-        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: validating $url")
-        if (isCookieValid(url)) return false
-
-        val ctx = context ?: return false
-        if (ctx !is Activity) return false
 
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
         val deferred = CompletableDeferred<Boolean>()
-        bypassInFlight[url] = deferred
+        bypassInFlight[key] = deferred
         try {
             val solved = withContext(Dispatchers.Main.immediate) {
                 suspendCancellableCoroutine<Boolean> { continuation ->
                     val launched = showCloudflareBypass(
                         ctx,
-                        url,
+                        solveUrl,
                         webViewVisible = Settings.cloudflareWebViewVisible(),
                     ) { success ->
                         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
@@ -315,9 +353,22 @@ object CineStreamExtractors {
             // wait-and-retry.
             return isCookieValid(url)
         } finally {
-            bypassInFlight.remove(url, deferred)
+            bypassInFlight.remove(key, deferred)
         }
     }
+
+    /** Current foreground Activity: the plugin's stored context is the app context. */
+    private fun currentActivity(): Activity? {
+        (context as? Activity)?.let {
+            if (!it.isFinishing && !it.isDestroyed) return it
+        }
+        return runCatching { com.lagradost.cloudstream3.CommonActivity.activity }
+            .getOrNull()
+            ?.takeIf { !it.isFinishing && !it.isDestroyed }
+    }
+
+    /** True once an Activity exists, so app-open validation can wait for it. */
+    fun hasForegroundActivity(): Boolean = currentActivity() != null
 
     private fun parseCookieString(cookieStr: String): LinkedHashMap<String, String> {
         val cookies = LinkedHashMap<String, String>()
@@ -374,6 +425,21 @@ object CineStreamExtractors {
         val response = app.get(url, headers = effectiveHeaders, allowRedirects = allowRedirects)
         if (!isCloudflarePage(response)) return response
 
+        // Hosts covered by the plugin's own bypass must use it and nothing
+        // else. CloudflareKiller starts a second WebView and its init calls
+        // removeAllCookies(null), which wipes the very cookie the bypass sheet
+        // just earned — the cause of the 2-3 extra solves.
+        if (Settings.hasCloudflareBypassForUrl(url)) {
+            Log.d(CF_LOG_TAG, "cfGet Cloudflare detected: ${response.code} for $url, using plugin bypass")
+            val solved = probeAndResolveIfNeeded(url, force = true)
+            if (!solved) return response
+            return app.get(
+                url,
+                headers = injectWebviewCookies(url, headersWithAgent),
+                allowRedirects = allowRedirects,
+            )
+        }
+
         Log.d(CF_LOG_TAG, "cfGet Cloudflare detected: ${response.code} for $url, retrying with CloudflareKiller")
 
         return mutexFor(url).withLock {
@@ -405,6 +471,21 @@ object CineStreamExtractors {
         val effectiveHeaders = injectWebviewCookies(url, headersWithAgent)
         val response = app.post(url, headers = effectiveHeaders, data = data, json = json, allowRedirects = allowRedirects)
         if (!isCloudflarePage(response)) return response
+
+        // Same rule as cfGet: never race the plugin's bypass with a second
+        // solver on hosts it owns.
+        if (Settings.hasCloudflareBypassForUrl(url)) {
+            Log.d(CF_LOG_TAG, "cfPost Cloudflare detected: ${response.code} for $url, using plugin bypass")
+            val solved = probeAndResolveIfNeeded(url, force = true)
+            if (!solved) return response
+            return app.post(
+                url,
+                headers = injectWebviewCookies(url, headersWithAgent),
+                data = data,
+                json = json,
+                allowRedirects = allowRedirects,
+            )
+        }
 
         return mutexFor(url).withLock {
             val cfKiller = killerFor(url)
