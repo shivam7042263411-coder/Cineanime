@@ -12,7 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 @CloudstreamPlugin
 open class CineStream: Plugin() {
@@ -25,8 +24,13 @@ open class CineStream: Plugin() {
 
     override fun load(context: Context) {
 
-        // Load dynamic API URLs once
-        runBlocking { init() }
+        // Load dynamic API URLs without blocking plugin load. An unbounded
+        // (or even 8s) runBlocking here freezes the whole app start on slow
+        // TV networks. The config is only needed by dynamic API providers
+        // during scraping, so loading it in the background is safe.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            init()
+        }
 
         // Seed seen-providers on every load so reinstalls/updates
         // don't treat existing providers as new
