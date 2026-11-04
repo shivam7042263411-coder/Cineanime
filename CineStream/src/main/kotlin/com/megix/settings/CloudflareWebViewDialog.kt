@@ -58,7 +58,12 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
     companion object {
         private const val TAG = "CFWebViewDialog"
         private const val POLL_INTERVAL_MS = 1_000L
-        private const val POLL_TIMEOUT_MS = 120_000L
+        // Cloudflare usually issues cf_clearance within a few seconds. If it
+        // hasn't appeared after 30s, the challenge is likely stuck (Turnstile
+        // checkbox, network issue, bad UA) — fail fast instead of spinning for
+        // 2 minutes. The visible sheet is offered as a fallback so the user
+        // isn't left with a silent no-op.
+        private const val POLL_TIMEOUT_MS = 30_000L
         private const val ARG_URL = "target_url"
         private const val ARG_EXPANDED = "start_expanded"
         private const val ARG_VISIBLE = "web_view_visible"
@@ -246,7 +251,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             var pollElapsedMs = 0L
             var pageLoaded = false
             val POLL_INTERVAL_MS = 1_000L
-            val POLL_TIMEOUT_MS = 120_000L
+            val POLL_TIMEOUT_MS = 30_000L
 
             fun extractCookies(): String {
                 cookieManager.flush()
@@ -351,7 +356,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
                     pollElapsedMs += POLL_INTERVAL_MS
                     if (pollElapsedMs >= POLL_TIMEOUT_MS) {
-                        Log.w(TAG, "Headless CF solve: ⏱️ Timed out after 120s")
+                        Log.w(TAG, "Headless CF solve: ⏱️ Timed out after 30s")
                         hasNotified = true
                         handler.removeCallbacks(this)
                         webView.stopLoading()
@@ -444,7 +449,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 return
             }
 
-            Log.w(TAG, "⏱️ CF bypass timed out after 120s")
+            Log.w(TAG, "⏱️ CF bypass timed out after 30s")
             notifyFinished(false)
             runCatching { dismissAllowingStateLoss() }
         }
