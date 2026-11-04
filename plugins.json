@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 535,
+    "version": 538,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v535: Two new Cloudflare Bypass controls in Settings - 'Check cookies' and 'Clear all cookies' - both D-pad navigable for Android TV. Check sends one request with the saved cookie and UA and reports Valid / Invalid / No cookie / Couldn't check (a network error is never shown as valid). Clear removes every saved cookie and timestamp for all bypass hosts, purges clearance cookies from the shared WebView jar, and resets the in-memory validation window so playback probes immediately instead of scraping with nothing. Clearing uses a two-step press (no extra dialog) and the Clear button stays in place, greyed out, so TV focus does not jump. All v534 Cloudflare fixes retained.",
-    "fileSize": 818262,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v538: TV overlap fix + clearance saving fixed + fail-fast timeout. (1) Invisible Cloudflare solver uses CloudStream's proven attach pattern: full-size alpha=0 container at index 0 of window root, touch passthrough, focus blocked - no challenge page overlaps the CineAnime home on TV. (2) isUsableClearance accepts an existing cf_clearance once the page loads past the challenge instead of waiting 120s for a token Cloudflare never reissues - cookies now actually save and Settings shows Saved. (3) Poll timeout cut from 120s to 30s - fail fast instead of spinning for 2 minutes. (4) Clear all cookies deletes Domain=.host jar variants too. (5) init() runs in background, no app-start freeze. (6) Removed dead JS cookie probe, always require cf_clearance, clear in-flight bypass on dismiss.",
+    "fileSize": 818744,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-dc026d8c786bccc7aefb5df77aee5176a94156d6243e845ac482155565e62bf1"
+    "fileHash": "sha256-ff92932e8c78d2c76b54d5793176a4e3fd10a75c97824374a290fb9645626822"
   }
 ]
