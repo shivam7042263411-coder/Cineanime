@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 538,
+    "version": 539,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v538: Fast Cloudflare solve - fail fast. (1) Reduced Cloudflare poll timeout from 120 seconds to 30 seconds - the invisible WebView either solves quickly or fails fast instead of waiting 2 minutes. (2) If the headless solve fails, it falls back to the visible sheet so the user isn't left with a silent no-op. (3) All v537 fixes retained: always require cf_clearance, removed dead JS cookie probe, clear in-flight bypass on dismiss, background API config load, tightened WebView security, removed double-poll. (4) All v536 fixes retained: alpha=0 invisible attach, isUsableClearance, Domain=.host cookie clearing.",
-    "fileSize": 818692,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v539: One solve only - no rapid repeats. (1) Added a 15-second solve cooldown per site - once a Cloudflare bypass solve is attempted, no another solve starts for 15 seconds. This prevents rapid repeated solves and multiple Cloudflare boxes appearing within seconds of each other. (2) The cooldown applies to both app-open probes and in-playback cfGet/cfPost retries, so a failed solve doesn't cascade into a second immediate attempt. (3) All v538 fixes retained: 30-second poll timeout (fail fast instead of 2 minutes), visible fallback if headless fails, always require cf_clearance, removed dead JS cookie probe, clear in-flight bypass on dismiss, background API config load, tightened WebView security, removed double-poll. (4) All v536/v537 fixes retained.",
+    "fileSize": 819083,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-76c1dd62029b63289810b7da2dcc85aab8f25c6201a36d073634ee42a92ea973"
+    "fileHash": "sha256-681af75a9e62f21c7ba5705a993d371af03234a8e57b5a6e930386df45af610e"
   }
 ]

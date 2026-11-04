@@ -83,6 +83,12 @@ object CineStreamExtractors {
     private val bypassInFlight = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private const val BYPASS_WAIT_MS = 150_000L
 
+    // Once a bypass solve is attempted for a site, don't start another one
+    // for this many seconds. Prevents rapid repeated solves / multiple
+    // Cloudflare boxes popping up within seconds of each other.
+    private val lastSolveAt = ConcurrentHashMap<String, Long>()
+    private const val SOLVE_COOLDOWN_MS = 15_000L // 15 seconds
+
     // State is keyed by site, not by exact URL. Requests carry query strings
     // (search, episode API), so a per-URL key meant a request never joined
     // the sheet that was already solving and the throttle never applied.
@@ -358,6 +364,15 @@ object CineStreamExtractors {
         }
         lastProbeAt[key] = System.currentTimeMillis()
 
+        // Don't start another solve if we just tried one recently. This stops
+        // rapid repeated solves and multiple Cloudflare boxes appearing within
+        // seconds of each other — one solve per site per cooldown window.
+        val lastSolve = lastSolveAt[key] ?: 0L
+        if (System.currentTimeMillis() - lastSolve < SOLVE_COOLDOWN_MS) {
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: solve cooldown active, skipping for $url")
+            return false
+        }
+
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: validating $solveUrl")
         if (isCookieValid(solveUrl)) return false
 
@@ -371,6 +386,9 @@ object CineStreamExtractors {
         }
 
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
+        // Record the solve attempt so no rapid re-solve happens within the
+        // cooldown window, regardless of whether this solve succeeds or fails.
+        lastSolveAt[key] = System.currentTimeMillis()
         val deferred = CompletableDeferred<Boolean>()
         bypassInFlight[key] = deferred
         try {
