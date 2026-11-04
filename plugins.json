@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 542,
+    "version": 543,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v542: Invisible mode never shows popups. When 'Hide Cloudflare WebView (invisible solve)' is enabled, the bypass WebView solves silently in the background and never falls back to a visible dialog \u2014 not for AnimePahe, not for kwik.cx. If the headless solver can't crack a challenge (e.g. Turnstile checkbox), it fails silently instead of popping a Cloudflare overlay over your player. kwik.cx remains in the bypass list so its Cloudflare challenges are also solved invisibly and the cookie jar isn't wiped by CloudflareKiller. All v541 fixes retained: kwik.cx in bypass, 15-second solve cooldown, 30-second poll timeout, always require cf_clearance, removed dead JS cookie probe, clear in-flight bypass on dismiss, background API config load, tightened WebView security, removed double-poll, alpha=0 invisible attach.",
-    "fileSize": 818457,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v543: Cloudflare actually solves in WebView. (1) Both visible and headless WebViews now use the SAME cleaned User-Agent (cleanUserAgent helper). The raw WebView UA was fingerprinted by Cloudflare as suspicious and never got cf_clearance issued. (2) Restored WebView settings Cloudflare's Turnstile challenge needs: setSupportMultipleWindows(true), javaScriptCanOpenWindowsAutomatically=true, mixedContentMode=ALWAYS_ALLOW, allowContentAccess=true, allowFileAccess=true, loadsImagesAutomatically=true. Without these the challenge never renders and cf_clearance is never issued \u2014 which is why no Cloudflare box appeared and no cookies were saved. (3) Invisible mode still never falls back to visible popup (v542). (4) kwik.cx remains in bypass list (v541). (5) 15-second solve cooldown, 30-second poll timeout, always require cf_clearance, clear in-flight bypass on dismiss, background API config load, removed double-poll.",
+    "fileSize": 818477,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-1f2b6e8a6338c358da3476c732c47abfa40645c18fe71c51cf89857974582a3e"
+    "fileHash": "sha256-1a55f0d64d64d9a60944bc440159270afd15b0859cb7d886b59ad79af0954874"
   }
 ]

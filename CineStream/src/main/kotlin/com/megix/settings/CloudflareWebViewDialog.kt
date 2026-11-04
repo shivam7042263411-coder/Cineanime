@@ -107,6 +107,23 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             cookieStr.contains("cf_clearance=")
 
         /**
+         * Clean the WebView UA the same way Phisher does: remove Version/,
+         * normalize Android TV → Android, add Mobile Safari/ for non-mobile
+         * Android UAs. Cloudflare binds cf_clearance to the exact solving UA,
+         * so both the visible and headless WebViews must use the same cleaned
+         * value, and requests must send that same value via currentCfUserAgent().
+         */
+        fun cleanUserAgent(originalUa: String): String {
+            var cleanUa = Regex("Version/[0-9.]+\\s*")
+                .replace(originalUa.replace("; wv", ""), "")
+            cleanUa = cleanUa.replace("Android TV", "Android")
+            if (cleanUa.contains("Android") && !cleanUa.contains("Mobile")) {
+                cleanUa = cleanUa.replace("Safari/", "Mobile Safari/")
+            }
+            return cleanUa
+        }
+
+        /**
          * A clearance is usable when it is new, or when it is the token that was
          * already in the jar and the page has genuinely loaded past the
          * challenge. Requiring a *different* token made the solver ignore a
@@ -185,18 +202,17 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     mediaPlaybackRequiresUserGesture = false
 
                     val originalUa = userAgentString ?: ""
-                    var cleanUa = Regex("Version/[0-9.]+\\s*")
-                        .replace(originalUa.replace("; wv", ""), "")
-                    cleanUa = cleanUa.replace("Android TV", "Android")
-                    if (cleanUa.contains("Android") && !cleanUa.contains("Mobile")) {
-                        cleanUa = cleanUa.replace("Safari/", "Mobile Safari/")
-                    }
-                    userAgentString = cleanUa
+                    userAgentString = cleanUserAgent(originalUa)
 
-                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                    allowContentAccess = false
-                    allowFileAccess = false
-                    loadsImagesAutomatically = false
+                    // Cloudflare's Turnstile challenge needs popups/windows and
+                    // mixed-content resources to render. Blocking them means the
+                    // challenge never appears and cf_clearance is never issued.
+                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    allowContentAccess = true
+                    allowFileAccess = true
+                    loadsImagesAutomatically = true
+                    setSupportMultipleWindows(true)
+                    javaScriptCanOpenWindowsAutomatically = true
                 }
             }
 
@@ -763,18 +779,19 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             mediaPlaybackRequiresUserGesture = false
             blockNetworkImage = false
             blockNetworkLoads = false
-            setSupportMultipleWindows(false)
-            javaScriptCanOpenWindowsAutomatically = false
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
 
-            // Use the raw WebView UA with minimal cleaning.
-            // Over-cleaning makes Cloudflare fingerprint the client as suspicious
-            // and it never issues a cf_clearance cookie.
-            userAgentString = userAgentString ?: ""
+            // Use the SAME cleaned UA as the headless solver. The raw WebView
+            // UA is fingerprinted by Cloudflare as suspicious and never gets a
+            // cf_clearance issued. Clean it the same way both paths use.
+            val originalUa = userAgentString ?: ""
+            userAgentString = cleanUserAgent(originalUa)
 
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            allowContentAccess = false
-            allowFileAccess = false
-            loadsImagesAutomatically = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            allowContentAccess = true
+            allowFileAccess = true
+            loadsImagesAutomatically = true
         }
 
         wv.webChromeClient = object : WebChromeClient() {
