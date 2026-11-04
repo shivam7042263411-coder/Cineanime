@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 534,
+    "version": 535,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v534: Fixed the remaining cloudflare failures on Android TV and the 2-3 repeated solves on phones. (1) The bypass WebView now opens at app open again: plugin.load receives the Application context, so the old code had no Activity and silently skipped - it now waits for CloudStream's foreground Activity. (2) The pre-solve cookie purge was removed: setCookie deletions are queued and could land after Cloudflare wrote the new token, deleting the first successful solve; the solver now remembers the old token and only accepts a different one. (3) cf_clearance from challenges.cloudflare.com/cloudflare.com is no longer merged into the saved AnimePahe cookie, which previously produced 'Saved' cookies that yielded no streams. (4) AnimePahe requests that hit a challenge now always use this plugin's bypass (forced, site-root target) instead of a racing CloudflareKiller whose init wipes the shared cookie jar; in-flight solves and throttling are keyed by site, not exact URL. All prior features retained: real cookie validation, invisible-by-default real-sized solver, visible fallback, no buttons.",
-    "fileSize": 810651,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v535: Two new Cloudflare Bypass controls in Settings - 'Check cookies' and 'Clear all cookies' - both D-pad navigable for Android TV. Check sends one request with the saved cookie and UA and reports Valid / Invalid / No cookie / Couldn't check (a network error is never shown as valid). Clear removes every saved cookie and timestamp for all bypass hosts, purges clearance cookies from the shared WebView jar, and resets the in-memory validation window so playback probes immediately instead of scraping with nothing. Clearing uses a two-step press (no extra dialog) and the Clear button stays in place, greyed out, so TV focus does not jump. All v534 Cloudflare fixes retained.",
+    "fileSize": 818262,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-2d4bb5c9be43c88bc24bb2420ac21d0ae636fa996e98ab5ed69bce037b1ced8e"
+    "fileHash": "sha256-dc026d8c786bccc7aefb5df77aee5176a94156d6243e845ac482155565e62bf1"
   }
 ]
