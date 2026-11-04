@@ -39,12 +39,14 @@ import java.util.concurrent.ConcurrentHashMap
 import com.megix.settings.Settings
 import com.megix.settings.SettingsWebView.showCloudflareBypass
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 object CineStreamExtractors {
@@ -71,6 +73,14 @@ object CineStreamExtractors {
     // from probing every episode.
     private val lastValidatedAt = ConcurrentHashMap<String, Long>()
     private const val VALIDATION_TRUST_MS = 2 * 60 * 1000L // 2 minutes
+
+    // A bypass WebView can already be open (app-open validation, settings
+    // button). Falling through to a second solver there is what made the
+    // sheet solve 2-3 extra times: CloudflareKiller's init wipes the shared
+    // cookie jar, deleting the clearance the sheet had just earned. Join the
+    // in-flight solve instead of racing it.
+    private val bypassInFlight = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
+    private const val BYPASS_WAIT_MS = 150_000L
 
     // Cloudflare binds cf_clearance to the exact User-Agent that solved the
     // challenge. Both solvers persist their UA at solve time: our bypass
@@ -243,6 +253,15 @@ object CineStreamExtractors {
     // If Cloudflare challenges (cookies expired/invalid), pops the bypass
     // WebView so the user can solve immediately — no manual settings needed.
     suspend fun probeAndResolveIfNeeded(url: String = "https://animepahe.pw/"): Boolean {
+        // A solve is already in progress (e.g. the app-open sheet). Wait for
+        // it rather than letting CloudflareKiller start a competing solve.
+        bypassInFlight[url]?.let { pending ->
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: joining in-flight bypass for $url")
+            val solved = withTimeoutOrNull(BYPASS_WAIT_MS) { pending.await() } ?: false
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: in-flight bypass finished, success=$solved")
+            return solved
+        }
+
         // Only a recent successful validation buys a skip. Cookie age alone
         // is not evidence that cf_clearance is still accepted.
         val validatedAt = lastValidatedAt[url] ?: 0L
@@ -267,27 +286,37 @@ object CineStreamExtractors {
         if (ctx !is Activity) return false
 
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
-        val solved = withContext(Dispatchers.Main.immediate) {
-            suspendCancellableCoroutine<Boolean> { continuation ->
-                val launched = showCloudflareBypass(
-                    ctx,
-                    url,
-                    webViewVisible = Settings.cloudflareWebViewVisible(),
-                ) { success ->
-                    Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
-                    if (continuation.isActive) continuation.resume(success)
+        val deferred = CompletableDeferred<Boolean>()
+        bypassInFlight[url] = deferred
+        try {
+            val solved = withContext(Dispatchers.Main.immediate) {
+                suspendCancellableCoroutine<Boolean> { continuation ->
+                    val launched = showCloudflareBypass(
+                        ctx,
+                        url,
+                        webViewVisible = Settings.cloudflareWebViewVisible(),
+                    ) { success ->
+                        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
+                        deferred.complete(success)
+                        if (continuation.isActive) continuation.resume(success)
+                    }
+                    // The dialog is already open (e.g. the settings button).
+                    // Do not wait on a callback that this call will never get.
+                    if (!launched && continuation.isActive) {
+                        deferred.complete(false)
+                        continuation.resume(false)
+                    }
                 }
-                // The dialog is already open (e.g. the launch auto-popup). Do
-                // not wait on a callback that this call will never receive.
-                if (!launched && continuation.isActive) continuation.resume(false)
             }
-        }
-        if (!solved) return false
+            if (!solved) return false
 
-        // The request that triggered the probe was challenged; re-validate
-        // once the fresh clearance is persisted, exactly like Phisher's
-        // wait-and-retry.
-        return isCookieValid(url)
+            // The request that triggered the probe was challenged; re-validate
+            // once the fresh clearance is persisted, exactly like Phisher's
+            // wait-and-retry.
+            return isCookieValid(url)
+        } finally {
+            bypassInFlight.remove(url, deferred)
+        }
     }
 
     private fun parseCookieString(cookieStr: String): LinkedHashMap<String, String> {

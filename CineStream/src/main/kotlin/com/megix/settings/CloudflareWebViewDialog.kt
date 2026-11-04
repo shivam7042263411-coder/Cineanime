@@ -96,8 +96,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 ?.groupValues?.getOrNull(1)?.trim()
 
         // cf_clearance is HttpOnly — document.cookie won't show it. We rely on
-        // CookieManager, but just check existence: any non-empty value means
-        // Cloudflare issued a clearance cookie.
+        // CookieManager. The jar is purged before every solve, so any
+        // cf_clearance present was just issued: do not additionally wait for
+        // the page title to change. That lag made the WebView load the
+        // challenge 2-3 more times before saving.
         fun hasClearance(cookieStr: String): Boolean =
             cookieStr.contains("cf_clearance=")
 
@@ -292,9 +294,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     Log.d(TAG, "Headless poll [$pollElapsedMs ms] title='$title' cookies → $cookieStr")
 
                     val hasClearanceCookie = hasClearance(cookieStr)
-                    val isChallenge = isChallengeTitle(title)
 
-                    if (hasClearanceCookie && !isChallenge) {
+                    if (hasClearanceCookie) {
                         cookiesSaved = true
                         val currentUrl = webView.url ?: targetUrl
                         val currentHost = runCatching {
@@ -405,8 +406,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             Log.d(TAG, "Poll [$pollElapsedMs ms] title='$currentTitle' cookies → $cookieStr")
 
             val hasClearanceCookie = hasClearance(cookieStr)
-            val isChallenge = isChallengeTitle(currentTitle)
-            if (hasClearanceCookie && !isChallenge) {
+            if (hasClearanceCookie) {
                 Log.d(TAG, "✅ Clearance cookie found! Saving.")
                 saveCookiesAndDismiss(cookieStr)
                 return
@@ -779,7 +779,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
         Log.d(TAG, "check title='$title' url=$url clearance=$hasClearanceCookie challenge=$isChallenge cookies=$cookieStr")
 
-        if (hasClearanceCookie && !isChallenge) {
+        if (hasClearanceCookie) {
             Log.d(TAG, "Clearance verified! Saving cookies.")
             saveCookiesAndDismiss(cookieStr)
             return
