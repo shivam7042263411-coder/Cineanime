@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 550,
+    "version": 551,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v550: fixes Cloudflare WebView not appearing on TV when toggle is off. (1) probeAndResolveIfNeeded now always triggers the bypass WebView when no saved cookie exists — previously it failed open and never showed Cloudflare on first launch, leaving TV users with no way to solve. (2) All v549 fixes retained: headless solver loads challenge page exactly once, 15-char clearance token, one-solve-at-a-time, TV invisible→visible fallback, D-pad cursor bounds, safe teardown with no overlap, per-host cookie read/save, per-domain settings rows, client hints, empty-UA guard, host-aware solving. Works for both invisible (toggle ON) and visible (toggle OFF) modes on phone and TV.",
-    "fileSize": 822393,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v551: fixes Cloudflare WebView not appearing on phone or TV. (1) currentActivity() now walks the context chain to find a valid Activity when CommonActivity.activity is unset, so the bypass WebView can always be launched. (2) probeAndResolveIfNeeded always opens the bypass when no saved cookie exists — never fail-open. (3) showCloudflareBypass now calls onCookiesChanged(false) on every failure path so the deferred is always completed. (4) Stale bypass fragments are removed before opening a new one. (5) withContext has invokeOnCancellation to complete the deferred if the coroutine is cancelled. (6) All v550 fixes retained: invisible→visible TV fallback, one-solve-at-a-time, per-host cookies, client hints, empty-UA guard, D-pad cursor bounds.",
+    "fileSize": 822855,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-cb02aeb2e1ec709d00cb53fff351dfcee663dea72eca8e5d08fea40f1f037804"
+    "fileHash": "sha256-658e1bd28e270c461a753287d6c5d3d9a4e578514d4014a902dcbbefc156c179"
   }
 ]
