@@ -215,7 +215,7 @@ object CineStreamExtractors {
         }
 
         // Show the bypass WebView on the main thread. The callback saves
-        // cookies when the solve succeeds; we don't need to wait for it.
+        // cookies when the solve succeeds; the next request will use them.
         withContext(Dispatchers.Main.immediate) {
             showCloudflareBypass(
                 ctx,
