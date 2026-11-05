@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 538,
+    "version": 539,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v538: Cloudflare bypass actually shows and saves cookies. (1) probeAndResolveIfNeeded now ACTUALLY SHOWS the bypass WebView when Cloudflare is detected - previously it just returned true without opening anything, so no Cloudflare box appeared and no cookies were saved. (2) currentActivity() restores the foreground Activity lookup so the bypass dialog can be displayed from anywhere during playback. (3) CineStream.load() stores context in CineStreamExtractors.context so the bypass can find the Activity. (4) Invisible WebView uses CloudStream's proven alpha=0 attach pattern - no challenge page overlaps the CineAnime home on TV. (5) isUsableClearance accepts existing cf_clearance once page loads past challenge - cookies actually save. (6) Poll timeout 30s - fail fast. (7) Same cleaned UA in both WebView paths. (8) WebView settings restored for Cloudflare Turnstile. (9) Always require cf_clearance before marking solve successful. (10) Removed dead JS cookie probe. (11) Clear in-flight bypass on dismiss. (12) Background API config load. (13) Clear all cookies deletes Domain=.host jar variants.",
-    "fileSize": 500270,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v539: Cloudflare bypass fixes - actually shows and saves cookies. (1) Fixed toggle inversion: 'Hide Cloudflare WebView' toggle now correctly controls visible vs invisible mode. When ON, bypass solves invisibly (alpha=0 behind content). When OFF, visible bottom sheet appears for solving. (2) probeAndResolveIfNeeded now correctly passes webViewVisible = cloudflareWebViewVisible() so the bypass dialog opens with the right visibility. (3) The 'Open' button on AnimePahe/Kwik rows in Settings now passes the correct visibility flag. (4) context is stored in CineStream.load() so currentActivity() can find the foreground Activity for showing the bypass dialog during playback. (5) All v538 fixes retained: 30s fail-fast timeout, isUsableClearance accepts existing token, always require cf_clearance, removed dead JS cookie probe, clear in-flight bypass on dismiss, background API config load, Domain=.host cookie clearing, cleaned User-Agent in both WebView paths, WebView settings restored for Cloudflare Turnstile.",
+    "fileSize": 500298,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-7b213ade24a2def7e0d7a8fb82883034b4855c8358a5fff73c30cb2888dab6e6"
+    "fileHash": "sha256-4a422cccaacd6aa152a9ac0d2accf943ec8c79828eec35680f437f01db69a520"
   }
 ]
