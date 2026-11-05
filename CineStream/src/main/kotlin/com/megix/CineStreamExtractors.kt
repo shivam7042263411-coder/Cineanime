@@ -366,7 +366,17 @@ object CineStreamExtractors {
         lastProbeAt[key] = System.currentTimeMillis()
 
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: validating $solveUrl")
-        if (isCookieValid(solveUrl)) return false
+        // If there is no saved cookie for this domain, do not fail open —
+        // always trigger the bypass so the Cloudflare WebView appears on first
+        // launch (and on TV where the invisible solver may not complete).
+        val hasCookie = Settings.hasSavedCookieForDomain(solveUrl)
+        if (hasCookie && isCookieValid(solveUrl)) {
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: cookie valid, skipping bypass for $solveUrl")
+            return false
+        }
+        if (!hasCookie) {
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: no saved cookie, triggering bypass for $solveUrl")
+        }
 
         // plugin.load() is handed the application context, which has no
         // FragmentManager — that is why no WebView ever appeared at app open.

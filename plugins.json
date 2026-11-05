@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 549,
+    "version": 550,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v549: invisible-mode hardening + Android TV support. (1) Headless solver loads the challenge page exactly once (no cancelled second load that broke API-endpoint solves). (2) cf_clearance token now requires 15+ chars and a non-challenge title before saving — no placeholder tokens accepted. (3) All WebView teardown goes through one runCatching path — no crash if the Activity dies mid-solve (common on TV). (4) One invisible solve at a time: parallel challenged requests join the in-flight solve instead of spawning duplicate WebViews. (5) On Android TV, if invisible solve fails (interactive Turnstile checkbox a headless WebView can't tap), falls back to visible D-pad-navigable dialog. (6) D-pad cursor clamped to WebView bounds on TV. (7) Check cookies now uses checkCookieValidity (VALID/INVALID/NO_COOKIE/UNKNOWN) instead of fail-open boolean. (8) All v548 fixes retained: per-host cookie read/save (no cross-mirror merge), per-domain settings rows, client hints sec-ch-ua-mobile/sec-ch-ua-platform, empty-UA guard, host-aware app-open and per-request solving.",
-    "fileSize": 822226,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v550: fixes Cloudflare WebView not appearing on TV when toggle is off. (1) probeAndResolveIfNeeded now always triggers the bypass WebView when no saved cookie exists — previously it failed open and never showed Cloudflare on first launch, leaving TV users with no way to solve. (2) All v549 fixes retained: headless solver loads challenge page exactly once, 15-char clearance token, one-solve-at-a-time, TV invisible→visible fallback, D-pad cursor bounds, safe teardown with no overlap, per-host cookie read/save, per-domain settings rows, client hints, empty-UA guard, host-aware solving. Works for both invisible (toggle ON) and visible (toggle OFF) modes on phone and TV.",
+    "fileSize": 822393,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-ad9a4b81b3fce508907935fd61b6db3e97ca2554c532844c718c3bd4a0a1602d"
+    "fileHash": "sha256-cb02aeb2e1ec709d00cb53fff351dfcee663dea72eca8e5d08fea40f1f037804"
   }
 ]
