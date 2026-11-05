@@ -191,7 +191,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     cookieManager.flush()
                     val cookieStr = CookieManager.getInstance().getCookie(targetHost) ?: ""
 
-                    if (Regex("cf_clearance=[^;]{15,}").containsMatchIn(cookieStr)) {
+                    // More lenient: just check for cf_clearance= with any value
+                    if (cookieStr.contains("cf_clearance=")) {
                         cookiesSavedLocal = true
                         notified = true
                         handler.removeCallbacks(this)
@@ -272,7 +273,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
         Log.d(TAG, "Poll [$pollElapsedMs ms] cookies for $targetHost → $cookieStr")
 
-        if (Regex("cf_clearance=[^;]{15,}").containsMatchIn(cookieStr)) {
+        // More lenient: just check for cf_clearance= with any value
+        if (cookieStr.contains("cf_clearance=")) {
             saveCookiesAndDismiss(cookieStr)
             return@Runnable
         }
@@ -528,7 +530,14 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         }
         cm.flush()
 
-        webView?.loadUrl(targetUrl)
+        // Force load the challenge page - ensure we hit the Cloudflare challenge
+        val challengeUrl = if (targetUrl.contains("/api/") || targetUrl.contains("api?")) {
+            // If it's an API endpoint, load the root to get the challenge
+            "https://${targetHost}/"
+        } else {
+            targetUrl
+        }
+        webView?.loadUrl(challengeUrl)
         handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
     }
 
@@ -595,19 +604,20 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 val cookiesFromTarget = CookieManager.getInstance().getCookie(targetHost) ?: ""
                 var bestCookies: String? = null
 
-                if (Regex("cf_clearance=[^;]{15,}").containsMatchIn(cookiesFromTarget)) {
+                // More lenient: just check for cf_clearance= with any value
+                if (cookiesFromTarget.contains("cf_clearance=")) {
                     bestCookies = cookiesFromTarget
                 } else if (url != null) {
                     try {
                         val uri = Uri.parse(url)
                         val cookiesFromUrl = CookieManager.getInstance().getCookie("${uri.scheme}://${uri.host}") ?: ""
-                        if (Regex("cf_clearance=[^;]{15,}").containsMatchIn(cookiesFromUrl)) {
+                        if (cookiesFromUrl.contains("cf_clearance=")) {
                             bestCookies = cookiesFromUrl
                         }
                     } catch (_: Exception) {}
                 }
 
-                if (bestCookies == null && webViewVisible) {
+                if (bestCookies == null && webViewVisible && cookiesFromTarget.isNotBlank()) {
                     bestCookies = cookiesFromTarget
                 }
 
