@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 542,
+    "version": 543,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v542: Cloudflare bypass actually waits for solve. (1) probeAndResolveIfNeeded now actually waits for the bypass WebView to complete before returning. The function shows the bypass and suspends until the user solves the challenge, then re-validates. (2) Fixed toggle inversion: 'Hide Cloudflare WebView' toggle now correctly controls visible vs invisible mode. (3) Cookies saved to all AnimePahe hosts + kwik.cx. (4) Invisible mode uses CloudStream's proven alpha=0 attach pattern - no challenge page overlaps the CineAnime home on TV. (5) 30s fail-fast timeout for headless, 120s for visible. (6) Cookies saved to all AnimePahe hosts. (7) kwik.cx in bypass list. (8) Always require cf_clearance before marking solve successful. (9) Removed dead JS cookie probe. (10) Clear in-flight bypass on dismiss. (11) Background API config load. (12) Domain=.host cookie clearing.",
-    "fileSize": 506794,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v543: WebView cache clearing + forced challenge load. (1) WebView cache is now cleared before loading to force fresh Cloudflare challenge. (2) Both visible and headless modes now force challenge page load for API endpoints. (3) Cloudflare cookies are purged from jar before loading to force fresh challenge. (4) Fixed toggle inversion - bypass now respects visible/invisible setting correctly. (5) probeAndResolveIfNeeded waits for bypass to complete before returning. (6) All v542 fixes retained: 30s fail-fast timeout for headless, isUsableClearance accepts existing token, always require cf_clearance, clear in-flight bypass on dismiss, background API config load, Domain=.host cookie clearing.",
+    "fileSize": 507630,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-6f1e4822f20ce49bb6c28ef5a9e745a906e57e9bba8d56bc47094858944d7d69"
+    "fileHash": "sha256-6bfbd26d15e67a4c33472d7b3deb5f470ebaf5bd8e67e673c3c09006dccb0def"
   }
 ]

@@ -188,6 +188,27 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
             cookieManager.setAcceptThirdPartyCookies(webView, true)
 
+            // Clear WebView cache to force fresh challenge
+            webView.clearCache(true)
+            webView.clearHistory()
+
+            // Purge any stale CF cookies from the jar to force a fresh challenge
+            val names = listOf("cf_clearance", "__cf_bm", "cf_chl_rc_ni", "cf_chl_prog", "__ddg1_", "__ddg2_", "__cfruid", "__cflb")
+            names.forEach { name ->
+                cookieManager.setCookie(targetHost, "$name=; domain=${targetHost.removePrefix("www.")}; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                cookieManager.setCookie(targetHost, "$name=; domain=.${targetHost.removePrefix("www.")}; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                cookieManager.setCookie(targetHost, "$name=; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+            }
+            cookieManager.flush()
+
+            // Force load the challenge page — for API endpoints, load root to get challenge
+            val challengeUrl = if (targetUrl.contains("/api/") || targetUrl.contains("api?")) {
+                "https://${targetHost}/"
+            } else {
+                targetUrl
+            }
+            webView.loadUrl(challengeUrl)
+
             // A full-size WebView is required: Cloudflare's challenge checks
             // that the page is rendered at a real size. The proven CloudStream
             // pattern is to attach it behind the app content at full size with
@@ -702,12 +723,28 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         cookieManager.setAcceptCookie(true)
         webView?.let { cookieManager.setAcceptThirdPartyCookies(it, true) }
         cookieManager.flush()
-        // Record what is already there instead of deleting it: queued
-        // deletions can race the fresh cf_clearance Cloudflare writes and
-        // wipe the first successful solve.
-        initialClearance = extractClearanceToken(extractCookies())
-        pageLoaded = false
-        webView?.loadUrl(targetUrl)
+        // Purge ALL Cloudflare cookies from the jar to force a fresh challenge.
+        // This is critical: if old cookies exist, Cloudflare won't issue a new challenge.
+        val host = targetHost.removePrefix("www.")
+        val names = listOf("cf_clearance", "__cf_bm", "cf_chl_rc_ni", "cf_chl_prog", "__ddg1_", "__ddg2_", "__cfruid", "__cflb", "cf_clearance", "cf_chl_prog", "cf_chl_rc_ni")
+        names.forEach { name ->
+            cookieManager.setCookie(targetHost, "$name=; domain=$host; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+            cookieManager.setCookie(targetHost, "$name=; domain=.$host; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+            cookieManager.setCookie(targetHost, "$name=; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+        }
+        cookieManager.flush()
+
+        // Clear WebView cache to force fresh load
+        webView?.clearCache(true)
+        webView?.clearHistory()
+
+        // Force load the challenge page — for API endpoints, load root to get challenge
+        val challengeUrl = if (targetUrl.contains("/api/") || targetUrl.contains("api?")) {
+            "https://${targetHost}/"
+        } else {
+            targetUrl
+        }
+        webView?.loadUrl(challengeUrl)
         handler.postDelayed(cookiePollRunnable, POLL_INTERVAL_MS)
 
         // Cloudflare sets cf_clearance asynchronously after JS runs — check
