@@ -1,11 +1,14 @@
 package com.megix
 
+import android.app.Activity
 import android.util.Log
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.CommonActivity
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.nicehttp.NiceResponse
 import com.megix.settings.Settings
+import com.megix.settings.SettingsWebView.showCloudflareBypass
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -163,32 +166,77 @@ object CineStreamExtractors {
         return valid
     }
 
+    // ── Current foreground Activity ─────────────────────────────────────
+
+    /** Context stored at plugin load time (usually the Application context). */
+    var context: android.content.Context? = null
+
+    /** Current foreground Activity: the plugin's stored context is the app context. */
+    private fun currentActivity(): Activity? {
+        (context as? Activity)?.let {
+            if (!it.isFinishing && !it.isDestroyed) return it
+        }
+        return runCatching { CommonActivity.activity }
+            .getOrNull()
+            ?.takeIf { !it.isFinishing && !it.isDestroyed }
+    }
+
+    /** True once an Activity exists, so app-open validation can wait for it. */
+    fun hasForegroundActivity(): Boolean = currentActivity() != null
+
     // ── Pre-flight probe ────────────────────────────────────────────────
 
     /**
      * Proactive pre-flight probe: fires before every playback attempt.
-     * If Cloudflare challenges (cookies expired/invalid), returns true so
-     * the caller can show the bypass WebView.
+     * If Cloudflare challenges (cookies expired/invalid), shows the bypass
+     * WebView so the user can solve immediately.
      */
     suspend fun probeAndResolveIfNeeded(
         url: String = "https://animepahe.pw/",
         force: Boolean = false,
     ): Boolean {
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: validating $url")
-        if (isCookieValid(url)) return false
 
-        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, bypass needed")
+        // Never load an API/JSON endpoint in the solver: it must fetch a page
+        // that can present the challenge. Site root is the safe target.
+        val solveUrl = "https://animepahe.pw/"
+
+        if (isCookieValid(solveUrl)) {
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: cookie valid, skipping bypass")
+            return false
+        }
+
+        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
+
+        val ctx = currentActivity()
+        if (ctx == null) {
+            Log.w(CF_LOG_TAG, "probeAndResolveIfNeeded: no Activity available for bypass")
+            return false
+        }
+
+        // Show the bypass WebView on the main thread. The callback saves
+        // cookies when the solve succeeds; we don't need to wait for it.
+        withContext(Dispatchers.Main.immediate) {
+            showCloudflareBypass(
+                ctx,
+                solveUrl,
+                webViewVisible = Settings.isCfWebviewEnabled(),
+            ) { success ->
+                Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
+            }
+        }
+
         return true
     }
 
     fun invalidateCookieCache() {
-        // No-op: throttle/validation state is not persisted
+        // No-op: validation state is not persisted in memory
     }
 
     // ── Stub invoke functions (providers configured via ProviderRegistry) ─
 
     suspend fun invokeAllSources(
-        res: AllLoadLinksData,
+        res: Any,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
@@ -196,7 +244,7 @@ object CineStreamExtractors {
     }
 
     suspend fun invokeAllAnimeSources(
-        res: AllLoadLinksData,
+        res: Any,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {

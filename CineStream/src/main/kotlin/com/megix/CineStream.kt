@@ -50,6 +50,9 @@ open class CineStream : Plugin() {
     }
 
     override fun load(context: Context) {
+        // Store context so Cloudflare bypass can find the foreground Activity
+        CineStreamExtractors.context = context
+
         // Register MainAPI (CineAnime) and Extractor APIs (Kwik, Pahe)
         registerMainAPI(CineAnimeProvider())
         // Kwik and Pahe extractors temporarily disabled - will be re-enabled
