@@ -146,6 +146,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 val uri = Uri.parse(targetUrl)
                 "${uri.scheme}://${uri.host}"
             }.getOrDefault(targetUrl)
+            val targetDomain = runCatching { Uri.parse(targetHost).host }.getOrNull() ?: targetHost
 
             val cookieManager = CookieManager.getInstance()
             cookieManager.setAcceptCookie(true)
@@ -193,17 +194,18 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             webView.clearHistory()
 
             // Purge any stale CF cookies from the jar to force a fresh challenge
+            val domain = targetDomain.removePrefix("www.")
             val names = listOf("cf_clearance", "__cf_bm", "cf_chl_rc_ni", "cf_chl_prog", "__ddg1_", "__ddg2_", "__cfruid", "__cflb")
             names.forEach { name ->
-                cookieManager.setCookie(targetHost, "$name=; domain=${targetHost.removePrefix("www.")}; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
-                cookieManager.setCookie(targetHost, "$name=; domain=.${targetHost.removePrefix("www.")}; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                cookieManager.setCookie(targetHost, "$name=; domain=$domain; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                cookieManager.setCookie(targetHost, "$name=; domain=.$domain; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
                 cookieManager.setCookie(targetHost, "$name=; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
             }
             cookieManager.flush()
 
             // Force load the challenge page — for API endpoints, load root to get challenge
             val challengeUrl = if (targetUrl.contains("/api/") || targetUrl.contains("api?")) {
-                "https://${targetHost}/"
+                "$targetHost/"
             } else {
                 targetUrl
             }
@@ -433,6 +435,11 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             val uri = Uri.parse(targetUrl)
             "${uri.scheme}://${uri.host}"
         }.getOrDefault(targetUrl)
+    }
+
+    /** Bare host (no scheme), for the `domain=` cookie attribute. */
+    private val targetDomain: String by lazy {
+        runCatching { Uri.parse(targetHost).host }.getOrNull() ?: targetHost
     }
 
     private val cookiePollRunnable = object : Runnable {
@@ -725,7 +732,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         cookieManager.flush()
         // Purge ALL Cloudflare cookies from the jar to force a fresh challenge.
         // This is critical: if old cookies exist, Cloudflare won't issue a new challenge.
-        val host = targetHost.removePrefix("www.")
+        val host = targetDomain.removePrefix("www.")
         val names = listOf("cf_clearance", "__cf_bm", "cf_chl_rc_ni", "cf_chl_prog", "__ddg1_", "__ddg2_", "__cfruid", "__cflb", "cf_clearance", "cf_chl_prog", "cf_chl_rc_ni")
         names.forEach { name ->
             cookieManager.setCookie(targetHost, "$name=; domain=$host; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
@@ -740,7 +747,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
         // Force load the challenge page — for API endpoints, load root to get challenge
         val challengeUrl = if (targetUrl.contains("/api/") || targetUrl.contains("api?")) {
-            "https://${targetHost}/"
+            "$targetHost/"
         } else {
             targetUrl
         }

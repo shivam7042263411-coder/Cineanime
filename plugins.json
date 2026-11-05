@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 545,
+    "version": 546,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v545: Restored the full provider/extractor stack that v541-v544 had accidentally deleted. (1) All built-in providers are back (Torrentio, TorrentsDB, AnimeTosho, ShowBox, Vidrock, Moviebox, TokyoInsider, Aniwatch, Anizone, Animekizz, etc.) - v544 shipped an empty ProviderRegistry, which is why every scrape failed and no Cloudflare WebView ever appeared. (2) Restored all extractor API registrations (HubCloud, VCloud, GDLink, StreamHub, etc.) and the four MainAPIs (CineStream, Simkl, TMDB, CineAnime). (3) Restored dynamic API URL init on plugin load. (4) Kept the Phisher-ported Cloudflare WebView UI, visible/invisible toggle, app-open auto-bypass, and cookie save/reuse from v541-v544. (5) Bounded API URL fetch to 8s so app start cannot hang.",
-    "fileSize": 819281,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v546: fixes the Cloudflare challenge WebView never loading. (1) Restored the full provider/extractor stack that v541-v544 accidentally deleted (all built-in providers, all extractor APIs, all four MainAPIs, dynamic API URL init). (2) Fixed the challenge URL being built as 'https://https://animepahe.pw/' for API endpoints, which made the WebView load nothing. (3) Fixed the Cloudflare cookie purge using an invalid domain ('https://animepahe.pw' instead of 'animepahe.pw'), so stale cf_clearance cookies are actually cleared and Cloudflare issues a fresh challenge. (4) Visible path now reports completion back to the probe. (5) Phisher-ported WebView UI, invisible/visible toggle, app-open auto-bypass and cookie reuse retained.",
+    "fileSize": 819607,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-6981f8c442d0e1b771e6a1fe6f4312a20bf49ac2ec2f8f7933951f03de7a76c5"
+    "fileHash": "sha256-dae7354a756fa27aed6825b939c14e5102b7d27c3e5e0200ddd75a888444e53d"
   }
 ]
