@@ -8,8 +8,8 @@
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v538: TV overlap fix + clearance saving fixed + fail-fast timeout. (1) Invisible Cloudflare solver uses CloudStream's proven attach pattern: full-size alpha=0 container at index 0 of window root, touch passthrough, focus blocked - no challenge page overlaps the CineAnime home on TV. (2) isUsableClearance accepts an existing cf_clearance once the page loads past the challenge instead of waiting 120s for a token Cloudflare never reissues - cookies now actually save and Settings shows Saved. (3) Poll timeout cut from 120s to 30s - fail fast instead of spinning for 2 minutes. (4) Clear all cookies deletes Domain=.host jar variants too. (5) init() runs in background, no app-start freeze. (6) Removed dead JS cookie probe, always require cf_clearance, clear in-flight bypass on dismiss.",
-    "fileSize": 818744,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v538: Complete Cloudflare bypass rewrite. (1) Invisible Cloudflare WebView uses CloudStream's proven attach pattern - full-size alpha=0 container at index 0 of window root, touch passthrough, focus blocked - no challenge page overlaps the CineAnime home on TV. (2) isUsableClearance accepts existing cf_clearance once page loads past challenge - cookies actually save and Settings shows Saved. (3) Poll timeout cut from 120s to 30s - fail fast instead of spinning for 2 minutes. (4) Both visible and headless WebViews use same cleaned User-Agent that Cloudflare accepts. (5) WebView settings restored for Cloudflare Turnstile (multiple windows, mixed content, file access, images). (6) Always require cf_clearance before marking solve successful. (7) Removed dead JS cookie probe. (8) Clear in-flight bypass on dismiss. (9) init() runs in background - no app-start freeze. (10) Clear all cookies deletes Domain=.host jar variants. Kwik and Pahe extractors temporarily disabled - will be re-enabled once their invoke functions are implemented.",
+    "fileSize": 499540,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-ff92932e8c78d2c76b54d5793176a4e3fd10a75c97824374a290fb9645626822"
+    "fileHash": "sha256-e7a8b52730bb97ded767894908309ff1b2ddfe4324441f3efb6f3a510a114a15"
   }
 ]
