@@ -114,6 +114,12 @@ open class CineStream: Plugin() {
                     waited += 500
                 }
                 delay(2_000) // let the Activity settle before any dialog
+                // Cache the Activity so bypass can find it even if
+                // CommonActivity.activity's WeakReference is later cleared.
+                runCatching {
+                    val act = com.lagradost.cloudstream3.CommonActivity.activity
+                    act?.let { CineStreamExtractors.setStoredActivity(it) }
+                }
                 runCatching {
                     // Validate the mirror that actually holds the saved
                     // clearance; a cookie minted on .org is rejected by .pw.

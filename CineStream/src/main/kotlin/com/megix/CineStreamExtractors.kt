@@ -63,6 +63,16 @@ object CineStreamExtractors {
     // bypass WebView from anywhere (e.g. pre-flight probe before playback).
     var context: Context? = null
 
+    // Last known foreground Activity, updated by CineStream.kt when the
+    // Activity becomes available and by currentActivity() on success.
+    // This survives WeakReference clears in CommonActivity.activity.
+    var storedActivity: Activity? = null
+        private set
+
+    fun setStoredActivity(activity: Activity?) {
+        storedActivity = activity
+    }
+
     // Throttle pre-flight probes so we don't hammer AnimePahe on every tap.
     private val lastProbeAt = ConcurrentHashMap<String, Long>()
     private const val PROBE_THROTTLE_MS = 60_000L // once per minute per URL
@@ -425,16 +435,20 @@ object CineStreamExtractors {
 
     /** Current foreground Activity: the plugin's stored context is the app context. */
     private fun currentActivity(): Activity? {
-        // Try the stored context first (may be an Activity if plugin was loaded from one).
+        // 1. Stored Activity (set by CineStream.kt when Activity becomes available).
+        storedActivity?.let {
+            if (!it.isFinishing && !it.isDestroyed) return it
+        }
+        // 2. Context as Activity.
         (context as? Activity)?.let {
             if (!it.isFinishing && !it.isDestroyed) return it
         }
-        // Fall back to CloudStream's tracked Activity (set by MainActivity via setActivityInstance).
+        // 3. CloudStream's tracked Activity (set by MainActivity via setActivityInstance).
         runCatching { com.lagradost.cloudstream3.CommonActivity.activity }
             .getOrNull()
             ?.takeIf { !it.isFinishing && !it.isDestroyed }
             ?.let { return it }
-        // Last resort: walk the context chain for any Activity.
+        // 4. Walk the context chain for any Activity.
         var ctx: Context? = context
         while (ctx is ContextWrapper) {
             if (ctx is Activity && !ctx.isFinishing && !ctx.isDestroyed) return ctx
