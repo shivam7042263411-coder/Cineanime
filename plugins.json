@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 548,
+    "version": 549,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v548: fixes saved Cloudflare cookies showing as invalid and streams not resolving. (1) The solver no longer merges cookies from every AnimePahe mirror into one map: a stale cf_clearance from a mirror overwrote the freshly solved token, which was then saved as 'valid' but rejected. Cookies are now read and saved only for the host that actually solved the challenge (matching Phisher's single-host model). (2) Per-host rows now read the per-domain cookies the solver writes instead of a legacy global key that was never populated; Remove clears only that mirror, and Clear all also clears per-domain cookies. (3) Check cookies validates the mirror that holds the cookie instead of hardcoded .pw. (4) Requests to bypass hosts send Phisher's sec-ch-ua-mobile/sec-ch-ua-platform client hints and drop X-Requested-With, matching the solving WebView. (5) An empty saved User-Agent is no longer sent. (6) The solver targets the requested mirror's root, not hardcoded .pw; AnimePahe prefers the mirror that already holds a clearance; app-open validation also checks that mirror. (7) v545 provider-stack restoration, v546 challenge-URL/purge fixes, invisible/visible toggle, app-open auto-bypass and cookie reuse retained.",
-    "fileSize": 820285,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v549: invisible-mode hardening + Android TV support. (1) Headless solver loads the challenge page exactly once (no cancelled second load that broke API-endpoint solves). (2) cf_clearance token now requires 15+ chars and a non-challenge title before saving — no placeholder tokens accepted. (3) All WebView teardown goes through one runCatching path — no crash if the Activity dies mid-solve (common on TV). (4) One invisible solve at a time: parallel challenged requests join the in-flight solve instead of spawning duplicate WebViews. (5) On Android TV, if invisible solve fails (interactive Turnstile checkbox a headless WebView can't tap), falls back to visible D-pad-navigable dialog. (6) D-pad cursor clamped to WebView bounds on TV. (7) Check cookies now uses checkCookieValidity (VALID/INVALID/NO_COOKIE/UNKNOWN) instead of fail-open boolean. (8) All v548 fixes retained: per-host cookie read/save (no cross-mirror merge), per-domain settings rows, client hints sec-ch-ua-mobile/sec-ch-ua-platform, empty-UA guard, host-aware app-open and per-request solving.",
+    "fileSize": 822226,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-896c85ab2ab961b8890802baad88ae22492f0f37b233dffaa4e58b37b4033f74"
+    "fileHash": "sha256-ad9a4b81b3fce508907935fd61b6db3e97ca2554c532844c718c3bd4a0a1602d"
   }
 ]
