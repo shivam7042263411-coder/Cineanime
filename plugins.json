@@ -2,13 +2,13 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 541,
+    "version": 542,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v541: Phisher's exact Cloudflare WebView port. (1) Complete rewrite of CloudflareWebViewDialog to match Phisher's AnimePahe implementation exactly. (2) Fixed all WebView loading issues - now properly loads challenge page for API endpoints. (3) Cookie detection uses Phisher's exact regex (cf_clearance=[^;]{15,}) and detection logic. (4) Invisible mode uses CloudStream's proven alpha=0 attach pattern with touch passthrough. (5) Both visible and headless modes use Phisher's exact WebView settings (clean UA, mixed content, multiple windows, file access, images). (6) Fixed toggle inversion - 'Hide Cloudflare WebView' now correctly controls visible/invisible mode. (7) probeAndResolveIfNeeded actually shows bypass WebView when Cloudflare detected. (8) Cookies saved to all AnimePahe hosts + kwik.cx. (9) 30s fail-fast timeout, kwik.cx in bypass, cleared in-flight on dismiss, background init.",
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v542: Cloudflare bypass actually waits for solve. (1) probeAndResolveIfNeeded now actually waits for the bypass WebView to complete before returning. The function shows the bypass and suspends until the user solves the challenge, then re-validates. (2) Fixed toggle inversion: 'Hide Cloudflare WebView' toggle now correctly controls visible vs invisible mode. (3) Cookies saved to all AnimePahe hosts + kwik.cx. (4) Invisible mode uses CloudStream's proven alpha=0 attach pattern - no challenge page overlaps the CineAnime home on TV. (5) 30s fail-fast timeout for headless, 120s for visible. (6) Cookies saved to all AnimePahe hosts. (7) kwik.cx in bypass list. (8) Always require cf_clearance before marking solve successful. (9) Removed dead JS cookie probe. (10) Clear in-flight bypass on dismiss. (11) Background API config load. (12) Domain=.host cookie clearing.",
     "fileSize": 506794,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-546ba717c58228db8e0d7f7d5c892cdd9b640bc336ec4e2d2ab7b41c9882ef55"
+    "fileHash": "sha256-6f1e4822f20ce49bb6c28ef5a9e745a906e57e9bba8d56bc47094858944d7d69"
   }
 ]
