@@ -22,7 +22,6 @@ import androidx.fragment.app.FragmentActivity
 import com.megix.CF_BYPASS_USER_AGENT
 import com.megix.settings.SettingsTheme.dp
 
-
 @SuppressLint("SetJavaScriptEnabled")
 internal object SettingsWebView {
 
@@ -74,8 +73,8 @@ internal object SettingsWebView {
 
     // ── Cloudflare bypass ────────────────────────────────────────────────
     // Phisher's CloudflareWebViewDialog: Material bottom sheet, 70% WebView,
-    // purge/poll/auto-save/auto-dismiss. Invisible mode uses an alpha=0
-    // full-size WebView behind app content — never falls back to visible.
+    // 2.5s slide-up, purge/poll/auto-save/auto-dismiss. The provider and
+    // request plumbing remain CineStream's; this is only the bypass UI.
     private const val CF_FRAGMENT_TAG = "cf_bypass_auto"
 
     private fun findFragmentActivity(context: Context): FragmentActivity? {
@@ -87,16 +86,6 @@ internal object SettingsWebView {
         return ctx as? FragmentActivity
     }
 
-    /**
-     * Show the Cloudflare bypass WebView.
-     *
-     * If webViewVisible is false, runs the headless invisible solver. If the
-     * headless solver fails (e.g. Cloudflare serves an interactive checkbox a
-     * headless WebView cannot press), it fails silently — no visible popup
-     * ever appears over the player.
-     *
-     * If webViewVisible is true, shows the visible bottom sheet dialog.
-     */
     fun showCloudflareBypass(
         context: Context,
         startUrl: String,
@@ -122,7 +111,7 @@ internal object SettingsWebView {
             if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it"
         }
 
-        // Invisible mode: solve cookies headlessly with NO visible fallback.
+        // Invisible mode: solve cookies headlessly with no UI shown.
         if (!webViewVisible) {
             Log.d(TAG, "Cloudflare bypass: starting invisible headless solve")
             return runCatching {
@@ -131,7 +120,9 @@ internal object SettingsWebView {
                         Log.d(TAG, "Cloudflare bypass: invisible solve succeeded")
                         onCookiesChanged(true)
                     } else {
-                        // Fail silently — no visible popup over the player.
+                        // The invisible solver failed (on TVs Cloudflare can
+                        // serve an interactive checkbox a headless WebView can
+                        // never press). Fail silently — no visible popup over the player.
                         Log.w(TAG, "Cloudflare bypass: invisible solve failed, no fallback")
                         onCookiesChanged(false)
                     }
@@ -148,9 +139,11 @@ internal object SettingsWebView {
         return runCatching {
             CloudflareWebViewDialog.newInstance(
                 targetUrl,
+                startExpanded = false,
                 webViewVisible = true,
+                onFinished = onCookiesChanged,
             )
-                .show(activity.supportFragmentManager, CF_FRAGMENT_TAG)
+            .show(activity.supportFragmentManager, CF_FRAGMENT_TAG)
             true
         }.getOrElse {
             Log.e(TAG, "Cloudflare bypass: failed to show dialog: ${it.message}")

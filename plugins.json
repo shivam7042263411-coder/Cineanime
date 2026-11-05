@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 544,
+    "version": 545,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v544: App-open Cloudflare auto-bypass restored. (1) Restored app-open Cloudflare cookie validation that was accidentally removed. (2) On app start, waits for foreground Activity (up to 20s), then validates saved cookie with real request. If Cloudflare challenges, shows bypass WebView automatically. (3) Uses CoroutineScope with SupervisorJob on Dispatchers.IO to not block app start. (4) Waits up to 20s for Activity, then 2s settle delay before probing. (5) All v543 fixes retained: WebView cache clearing, forced challenge load for API endpoints, cookie jar purging, fixed toggle, 30s/120s timeouts, kwik.cx in bypass.",
-    "fileSize": 508644,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v545: Restored the full provider/extractor stack that v541-v544 had accidentally deleted. (1) All built-in providers are back (Torrentio, TorrentsDB, AnimeTosho, ShowBox, Vidrock, Moviebox, TokyoInsider, Aniwatch, Anizone, Animekizz, etc.) - v544 shipped an empty ProviderRegistry, which is why every scrape failed and no Cloudflare WebView ever appeared. (2) Restored all extractor API registrations (HubCloud, VCloud, GDLink, StreamHub, etc.) and the four MainAPIs (CineStream, Simkl, TMDB, CineAnime). (3) Restored dynamic API URL init on plugin load. (4) Kept the Phisher-ported Cloudflare WebView UI, visible/invisible toggle, app-open auto-bypass, and cookie save/reuse from v541-v544. (5) Bounded API URL fetch to 8s so app start cannot hang.",
+    "fileSize": 819281,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-ec053cb351f4d411febb0471baa27f81da91af7851a83b779150cfbc93778271"
+    "fileHash": "sha256-6981f8c442d0e1b771e6a1fe6f4312a20bf49ac2ec2f8f7933951f03de7a76c5"
   }
 ]
