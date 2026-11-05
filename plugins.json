@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 543,
+    "version": 544,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v543: WebView cache clearing + forced challenge load. (1) WebView cache is now cleared before loading to force fresh Cloudflare challenge. (2) Both visible and headless modes now force challenge page load for API endpoints. (3) Cloudflare cookies are purged from jar before loading to force fresh challenge. (4) Fixed toggle inversion - bypass now respects visible/invisible setting correctly. (5) probeAndResolveIfNeeded waits for bypass to complete before returning. (6) All v542 fixes retained: 30s fail-fast timeout for headless, isUsableClearance accepts existing token, always require cf_clearance, clear in-flight bypass on dismiss, background API config load, Domain=.host cookie clearing.",
-    "fileSize": 507630,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v544: App-open Cloudflare auto-bypass restored. (1) Restored app-open Cloudflare cookie validation that was accidentally removed. (2) On app start, waits for foreground Activity (up to 20s), then validates saved cookie with real request. If Cloudflare challenges, shows bypass WebView automatically. (3) Uses CoroutineScope with SupervisorJob on Dispatchers.IO to not block app start. (4) Waits up to 20s for Activity, then 2s settle delay before probing. (5) All v543 fixes retained: WebView cache clearing, forced challenge load for API endpoints, cookie jar purging, fixed toggle, 30s/120s timeouts, kwik.cx in bypass.",
+    "fileSize": 508644,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-6bfbd26d15e67a4c33472d7b3deb5f470ebaf5bd8e67e673c3c09006dccb0def"
+    "fileHash": "sha256-ec053cb351f4d411febb0471baa27f81da91af7851a83b779150cfbc93778271"
   }
 ]
