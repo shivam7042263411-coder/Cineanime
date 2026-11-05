@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -18,6 +19,7 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.webkit.*
 import android.widget.*
+import com.lagradost.cloudstream3.ui.settings.Globals
 import androidx.fragment.app.FragmentActivity
 import com.megix.CF_BYPASS_USER_AGENT
 import com.megix.settings.SettingsTheme.dp
@@ -77,6 +79,25 @@ internal object SettingsWebView {
     // request plumbing remain CineStream's; this is only the bypass UI.
     private const val CF_FRAGMENT_TAG = "cf_bypass_auto"
 
+    // One invisible solve at a time. The timestamp also recovers if a solve's
+    // callback is ever lost (e.g. the Activity was destroyed): after three
+    // minutes a new solve is allowed instead of blocking forever.
+    private val headlessSolveStartedAt = java.util.concurrent.atomic.AtomicLong(0L)
+    private const val HEADLESS_SOLVE_STALE_MS = 180_000L
+
+    private fun claimHeadlessSolve(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        while (true) {
+            val current = headlessSolveStartedAt.get()
+            if (current != 0L && now - current < HEADLESS_SOLVE_STALE_MS) return false
+            if (headlessSolveStartedAt.compareAndSet(current, now)) return true
+        }
+    }
+
+    private fun releaseHeadlessSolve() {
+        headlessSolveStartedAt.set(0L)
+    }
+
     private fun findFragmentActivity(context: Context): FragmentActivity? {
         var ctx: Context? = context
         while (ctx is ContextWrapper) {
@@ -98,10 +119,6 @@ internal object SettingsWebView {
             return false
         }
         if (activity.isFinishing || activity.isDestroyed) return false
-        if (activity.supportFragmentManager.isStateSaved) {
-            Log.e(TAG, "Cloudflare bypass: FragmentManager state already saved")
-            return false
-        }
         if (activity.supportFragmentManager.findFragmentByTag(CF_FRAGMENT_TAG) != null) {
             Log.d(TAG, "Cloudflare bypass dialog already open, not stacking another")
             return false
@@ -111,44 +128,75 @@ internal object SettingsWebView {
             if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it"
         }
 
+        // TV detection: Cloudflare often serves an interactive Turnstile checkbox on TV
+        // that a headless WebView can never tap. If invisible solve fails on TV we
+        // fall back to the visible dialog so the user can tap it with D-pad.
+        val uiMode = activity.resources.configuration.uiMode
+        val isTv = uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK ==
+            android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+
+        // Visible mode: show the bottom sheet dialog. Extracted so invisible mode
+        // can fall back to it on TV when the headless solver can't complete.
+        fun showVisible(): Boolean {
+            return runCatching {
+                CloudflareWebViewDialog.newInstance(
+                    targetUrl,
+                    startExpanded = false,
+                    webViewVisible = true,
+                    onFinished = onCookiesChanged,
+                )
+                .show(activity.supportFragmentManager, CF_FRAGMENT_TAG)
+                true
+            }.getOrElse {
+                Log.e(TAG, "Cloudflare bypass: failed to show dialog: ${it.message}")
+                false
+            }
+        }
+
         // Invisible mode: solve cookies headlessly with no UI shown.
         if (!webViewVisible) {
-            Log.d(TAG, "Cloudflare bypass: starting invisible headless solve")
+            // One invisible solve at a time. Parallel challenged requests can
+            // otherwise each create a headless WebView before the probe has
+            // registered its in-flight solve — extra page loads, extra memory,
+            // and main-thread stutter while a video is playing.
+            if (!claimHeadlessSolve()) {
+                Log.d(TAG, "Cloudflare bypass: invisible solve already running, not stacking another")
+                return false
+            }
+            Log.d(TAG, "Cloudflare bypass: starting invisible headless solve (isTv=$isTv)")
             return runCatching {
                 CloudflareWebViewDialog.solveCookiesHeadless(activity, targetUrl) { success ->
+                    releaseHeadlessSolve()
                     if (success) {
                         Log.d(TAG, "Cloudflare bypass: invisible solve succeeded")
                         onCookiesChanged(true)
+                    } else if (isTv) {
+                        // Invisible solve failed on TV — likely an interactive
+                        // Turnstile checkbox the headless WebView can't press.
+                        // Fall back to visible mode so the user can solve it.
+                        Log.d(TAG, "Cloudflare bypass: invisible failed on TV, falling back to visible")
+                        if (!showVisible()) onCookiesChanged(false)
                     } else {
-                        // The invisible solver failed (on TVs Cloudflare can
-                        // serve an interactive checkbox a headless WebView can
-                        // never press). Fail silently — no visible popup over the player.
                         Log.w(TAG, "Cloudflare bypass: invisible solve failed, no fallback")
                         onCookiesChanged(false)
                     }
                 }
                 true
             }.getOrElse {
+                releaseHeadlessSolve()
                 Log.e(TAG, "Cloudflare bypass: headless solve failed: ${it.message}")
-                onCookiesChanged(false)
-                false
+                if (isTv && showVisible()) {
+                    // Visible fallback launched on TV; its onFinished callback
+                    // will resolve the deferred. Return true so the coroutine waits.
+                    true
+                } else {
+                    onCookiesChanged(false)
+                    false
+                }
             }
         }
 
-        // Visible mode: show the bottom sheet dialog.
-        return runCatching {
-            CloudflareWebViewDialog.newInstance(
-                targetUrl,
-                startExpanded = false,
-                webViewVisible = true,
-                onFinished = onCookiesChanged,
-            )
-            .show(activity.supportFragmentManager, CF_FRAGMENT_TAG)
-            true
-        }.getOrElse {
-            Log.e(TAG, "Cloudflare bypass: failed to show dialog: ${it.message}")
-            false
-        }
+        return showVisible()
     }
 
     fun show(context: Context, type: LoginType, onToken: (String) -> Unit) {

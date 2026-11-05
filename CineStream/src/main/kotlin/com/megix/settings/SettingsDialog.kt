@@ -284,17 +284,28 @@ internal object SettingsDialog {
                     // every saved cookie look invalid.
                     val checkUrl = (CineStreamExtractors.savedAnimePaheHost()
                         ?: "https://animepahe.pw") + "/"
-                    val valid = CineStreamExtractors.isCookieValid(checkUrl)
+                    val result = CineStreamExtractors.checkCookieValidity(checkUrl)
                     checking = false
                     checkBtn.isEnabled = true
                     checkBtn.alpha = 1f
                     checkBtn.text = "✓ Check cookies"
-                    if (valid) {
-                        cookieStatus.text = "✓ AnimePahe cookie is valid"
-                        cookieStatus.setTextColor(Color.parseColor("#22C55E"))
-                    } else {
-                        cookieStatus.text = "✗ AnimePahe cookie is invalid — Cloudflare is challenging. Solve below."
-                        cookieStatus.setTextColor(Color.parseColor("#EF4444"))
+                    when (result.status) {
+                        CineStreamExtractors.CookieStatus.VALID -> {
+                            cookieStatus.text = "✓ AnimePahe cookie is valid"
+                            cookieStatus.setTextColor(Color.parseColor("#22C55E"))
+                        }
+                        CineStreamExtractors.CookieStatus.INVALID -> {
+                            cookieStatus.text = "✗ AnimePahe cookie is invalid — Cloudflare is challenging. Solve below."
+                            cookieStatus.setTextColor(Color.parseColor("#EF4444"))
+                        }
+                        CineStreamExtractors.CookieStatus.NO_COOKIE -> {
+                            cookieStatus.text = "No saved cookie for this mirror — solve below."
+                            cookieStatus.setTextColor(theme.TEXT_SECONDARY)
+                        }
+                        CineStreamExtractors.CookieStatus.UNKNOWN -> {
+                            cookieStatus.text = "Could not check (network error) — try again."
+                            cookieStatus.setTextColor(theme.TEXT_SECONDARY)
+                        }
                     }
                 }
             }

@@ -378,8 +378,17 @@ object CineStreamExtractors {
         }
 
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
+        // Claim the solve atomically. isCookieValid() above is a network call,
+        // so several parallel challenged requests can all reach this point.
+        // Only one may start the WebView; the rest await the winner instead of
+        // spawning a second invisible WebView and a second page load.
         val deferred = CompletableDeferred<Boolean>()
-        bypassInFlight[key] = deferred
+        val existing = bypassInFlight.putIfAbsent(key, deferred)
+        if (existing != null) {
+            val solved = withTimeoutOrNull(BYPASS_WAIT_MS) { existing.await() } ?: false
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: joined concurrent solve for $url, success=$solved")
+            return solved
+        }
         try {
             val solved = withContext(Dispatchers.Main.immediate) {
                 suspendCancellableCoroutine<Boolean> { continuation ->

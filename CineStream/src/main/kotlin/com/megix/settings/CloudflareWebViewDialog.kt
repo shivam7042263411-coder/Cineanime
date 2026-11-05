@@ -83,12 +83,14 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             return CHALLENGE_TITLES.any { lower.contains(it) }
         }
 
+        // Phisher only accepts a real token: a cf_clearance shorter than 15
+        // chars is a placeholder set during the challenge, not a clearance.
         fun extractClearanceToken(cookieStr: String): String? =
-            Regex("cf_clearance=([^;]+)").find(cookieStr)
+            Regex("cf_clearance=([^;]{15,})").find(cookieStr)
                 ?.groupValues?.getOrNull(1)?.trim()
 
         fun hasClearance(cookieStr: String): Boolean =
-            cookieStr.contains("cf_clearance=")
+            extractClearanceToken(cookieStr) != null
 
         fun isUsableClearance(
             cookieStr: String,
@@ -203,13 +205,14 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             }
             cookieManager.flush()
 
-            // Force load the challenge page — for API endpoints, load root to get challenge
+            // Force load the challenge page — for API endpoints, load root to get
+            // the challenge. The load itself happens once below, after the client
+            // is attached, so onPageFinished fires for this navigation.
             val challengeUrl = if (targetUrl.contains("/api/") || targetUrl.contains("api?")) {
                 "$targetHost/"
             } else {
                 targetUrl
             }
-            webView.loadUrl(challengeUrl)
 
             // A full-size WebView is required: Cloudflare's challenge checks
             // that the page is rendered at a real size. The proven CloudStream
@@ -243,6 +246,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             try {
                 if (attachmentParent == null) {
                     Log.e(TAG, "Headless CF solve: no content root to attach WebView")
+                    runCatching { webView.destroy() }
                     onFinished(false)
                     return
                 }
@@ -250,6 +254,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 attachmentParent.addView(container, 0)
             } catch (e: Exception) {
                 Log.e(TAG, "Headless CF solve: failed to attach WebView: ${e.message}")
+                runCatching { webView.destroy() }
                 onFinished(false)
                 return
             }
@@ -260,6 +265,17 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             var pollElapsedMs = 0L
             val POLL_INTERVAL_MS = 1_000L
             val POLL_TIMEOUT_MS = 120_000L
+
+            // One exit path for every outcome. WebView.destroy() can throw if
+            // the Activity went away first (common on TV when the player is
+            // closed mid-solve), so never let cleanup escape.
+            fun teardown() {
+                handler.removeCallbacksAndMessages(null)
+                runCatching { webView.stopLoading() }
+                runCatching { webView.destroy() }
+                runCatching { container.removeView(webView) }
+                runCatching { (container.parent as? ViewGroup)?.removeView(container) }
+            }
 
             fun extractCookies(): String {
                 cookieManager.flush()
@@ -307,11 +323,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     if (cookiesSaved || hasNotified || activity.isFinishing || activity.isDestroyed) {
                         if (!hasNotified) {
                             hasNotified = true
-                            handler.removeCallbacks(this)
-                            webView.stopLoading()
-                            webView.destroy()
-                            container.removeView(webView)
-                            try { (container.parent as? ViewGroup)?.removeView(container) } catch (_: Exception) {}
+                            teardown()
                             onFinished(false)
                         }
                         return
@@ -321,9 +333,13 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     val title = webView.title ?: ""
                     Log.d(TAG, "Headless poll [$pollElapsedMs ms] title='$title' cookies → $cookieStr")
 
+                    // A token can appear while the interstitial is still up;
+                    // save only after the page has left the challenge (same as
+                    // Phisher). A blank title, common on TV WebViews, is not a
+                    // challenge title and is accepted.
                     val hasClearanceCookie = isUsableClearance(
                         cookieStr, initialClearance, title, false,
-                    )
+                    ) && !isChallengeTitle(title)
 
                     if (hasClearanceCookie) {
                         cookiesSaved = true
@@ -345,11 +361,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
                         Log.d(TAG, "Headless CF solve: ✅ Saved cookies for $saveHost")
                         hasNotified = true
-                        handler.removeCallbacks(this)
-                        webView.stopLoading()
-                        webView.destroy()
-                        container.removeView(webView)
-                        try { (container.parent as? ViewGroup)?.removeView(container) } catch (_: Exception) {}
+                        teardown()
                         onFinished(true)
                         return
                     }
@@ -358,11 +370,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     if (pollElapsedMs >= POLL_TIMEOUT_MS) {
                         Log.w(TAG, "Headless CF solve: ⏱️ Timed out after 120s")
                         hasNotified = true
-                        handler.removeCallbacks(this)
-                        webView.stopLoading()
-                        webView.destroy()
-                        container.removeView(webView)
-                        try { (container.parent as? ViewGroup)?.removeView(container) } catch (_: Exception) {}
+                        teardown()
                         onFinished(false)
                         return
                     }
@@ -384,7 +392,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 }
             }
 
-            webView.loadUrl(targetUrl)
+            // Load the challenge page exactly once, now that the client is
+            // attached. Loading targetUrl here (as this used to) cancelled the
+            // challenge navigation and, for API endpoints, loaded raw JSON.
+            webView.loadUrl(challengeUrl)
             handler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
         }
 
@@ -667,9 +678,11 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     when (event.keyCode) {
                         KeyEvent.KEYCODE_DPAD_UP -> cursorY = (cursorY - 40f).coerceAtLeast(0f)
-                        KeyEvent.KEYCODE_DPAD_DOWN -> cursorY = (cursorY + 40f).coerceAtMost(view.height - 24f)
+                        KeyEvent.KEYCODE_DPAD_DOWN -> cursorY = (cursorY + 40f)
+                            .coerceIn(0f, (view.height - 24f).coerceAtLeast(0f))
                         KeyEvent.KEYCODE_DPAD_LEFT -> cursorX = (cursorX - 40f).coerceAtLeast(0f)
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> cursorX = (cursorX + 40f).coerceAtMost(view.width - 24f)
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> cursorX = (cursorX + 40f)
+                            .coerceIn(0f, (view.width - 24f).coerceAtLeast(0f))
                         KeyEvent.KEYCODE_DPAD_CENTER,
                         KeyEvent.KEYCODE_ENTER,
                         KeyEvent.KEYCODE_NUMPAD_ENTER -> {
@@ -848,7 +861,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
         Log.d(TAG, "check title='$title' url=$url clearance=$hasClearanceCookie challenge=$isChallenge cookies=$cookieStr")
 
-        if (hasClearanceCookie) {
+        if (hasClearanceCookie && !isChallenge) {
             Log.d(TAG, "Clearance verified! Saving cookies.")
             saveCookiesAndDismiss(cookieStr)
             return
