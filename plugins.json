@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 547,
+    "version": 548,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v547: fixes saved Cloudflare cookies showing as invalid and streams not resolving. (1) The solver no longer merges cookies from every AnimePahe mirror into one map: a stale cf_clearance from a mirror overwrote the freshly solved token, which was then saved as 'valid' but rejected. Cookies are now read and saved only for the host that actually solved the challenge (matching Phisher's single-host model). (2) Per-host rows now read the per-domain cookies the solver writes instead of a legacy global key that was never populated; Remove clears only that mirror, and Clear all also clears per-domain cookies. (3) Check cookies now validates the mirror that holds the cookie instead of hardcoded .pw. (4) Requests to bypass hosts now send Phisher's sec-ch-ua-mobile/sec-ch-ua-platform client hints and drop X-Requested-With, matching the solving WebView. (5) An empty saved User-Agent is no longer sent. (6) The solver targets the requested mirror's root, not hardcoded .pw, and AnimePahe prefers the mirror that already holds a clearance. (7) v545 provider-stack restoration, v546 challenge-URL/purge fixes, invisible/visible toggle, app-open auto-bypass and cookie reuse retained.",
-    "fileSize": 820279,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v548: fixes saved Cloudflare cookies showing as invalid and streams not resolving. (1) The solver no longer merges cookies from every AnimePahe mirror into one map: a stale cf_clearance from a mirror overwrote the freshly solved token, which was then saved as 'valid' but rejected. Cookies are now read and saved only for the host that actually solved the challenge (matching Phisher's single-host model). (2) Per-host rows now read the per-domain cookies the solver writes instead of a legacy global key that was never populated; Remove clears only that mirror, and Clear all also clears per-domain cookies. (3) Check cookies validates the mirror that holds the cookie instead of hardcoded .pw. (4) Requests to bypass hosts send Phisher's sec-ch-ua-mobile/sec-ch-ua-platform client hints and drop X-Requested-With, matching the solving WebView. (5) An empty saved User-Agent is no longer sent. (6) The solver targets the requested mirror's root, not hardcoded .pw; AnimePahe prefers the mirror that already holds a clearance; app-open validation also checks that mirror. (7) v545 provider-stack restoration, v546 challenge-URL/purge fixes, invisible/visible toggle, app-open auto-bypass and cookie reuse retained.",
+    "fileSize": 820285,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-258ad5ed1a50c360173b51e2c42f896c0dd208f3628acc538ee20a3fac870acb"
+    "fileHash": "sha256-896c85ab2ab961b8890802baad88ae22492f0f37b233dffaa4e58b37b4033f74"
   }
 ]

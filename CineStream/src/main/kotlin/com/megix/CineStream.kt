@@ -115,7 +115,11 @@ open class CineStream: Plugin() {
                 }
                 delay(2_000) // let the Activity settle before any dialog
                 runCatching {
-                    CineStreamExtractors.probeAndResolveIfNeeded("https://animepahe.pw/")
+                    // Validate the mirror that actually holds the saved
+                    // clearance; a cookie minted on .org is rejected by .pw.
+                    CineStreamExtractors.probeAndResolveIfNeeded(
+                        (CineStreamExtractors.savedAnimePaheHost() ?: "https://animepahe.pw") + "/"
+                    )
                 }.onFailure {
                     Log.e("CineStreamAutoBypass", "Cookie validation failed: ${it.message}")
                 }
