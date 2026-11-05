@@ -220,7 +220,7 @@ object CineStreamExtractors {
             showCloudflareBypass(
                 ctx,
                 solveUrl,
-                webViewVisible = Settings.isCfWebviewEnabled(),
+                webViewVisible = Settings.cloudflareWebViewVisible(),
             ) { success ->
                 Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
             }

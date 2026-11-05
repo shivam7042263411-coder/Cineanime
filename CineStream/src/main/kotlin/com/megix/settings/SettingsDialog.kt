@@ -246,10 +246,10 @@ internal object SettingsDialog {
                 "Hide Cloudflare WebView (invisible solve)",
                 "When on, the bypass WebView solves silently in the background with no UI shown. " +
                     "Turn off if Cloudflare ever shows a checkbox you need to tap.",
-                "ANIMEPAHE_CF_WEBVIEW_ENABLED", Settings.isCfWebviewEnabled(), pending,
+                "ANIMEPAHE_CF_WEBVIEW_ENABLED", Settings.isCfWebviewHidden(), pending,
                 onChanged = {
                     val enabled = pending["ANIMEPAHE_CF_WEBVIEW_ENABLED"] as? Boolean
-                        ?: Settings.isCfWebviewEnabled()
+                        ?: Settings.isCfWebviewHidden()
                     Settings.saveCfWebviewEnabled(enabled)
                 }))
 
@@ -376,7 +376,7 @@ internal object SettingsDialog {
                         SettingsWebView.showCloudflareBypass(
                             context,
                             "https://$host",
-                            webViewVisible = Settings.isCfWebviewEnabled(),
+                            webViewVisible = Settings.cloudflareWebViewVisible(),
                         ) { refreshRow() }
                     })
                     if (hasCookie) {

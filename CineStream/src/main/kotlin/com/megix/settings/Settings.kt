@@ -51,11 +51,13 @@ object Settings {
     fun getCookieTimestamp(urlOrDomain: String): Long? =
         getKey<Long>(cookieTsKeyForDomain(urlOrDomain))
 
-    /** Is the Cloudflare bypass WebView hidden (invisible solve)? */
     fun cloudflareWebViewHidden(): Boolean = getKey<Boolean>(CF_WEBVIEW_ENABLED_KEY) ?: true
 
-    /** Is the Cloudflare bypass WebView visible (shown)? */
+    /** Is the Cloudflare bypass WebView visible (shown)? Opposite of hidden. */
     fun cloudflareWebViewVisible(): Boolean = !cloudflareWebViewHidden()
+
+    /** Is the Cloudflare bypass WebView hidden (invisible solve)? Alias for cloudflareWebViewHidden(). */
+    fun isCfWebviewHidden(): Boolean = cloudflareWebViewHidden()
 
     // ── CF cookie persistence ──────────────────────────────────────────────
 
