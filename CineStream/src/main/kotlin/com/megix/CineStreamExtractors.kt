@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.*
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
 import android.webkit.CookieManager
 import com.lagradost.nicehttp.NiceResponse
@@ -366,21 +367,18 @@ object CineStreamExtractors {
         lastProbeAt[key] = System.currentTimeMillis()
 
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: validating $solveUrl")
-        // If there is no saved cookie for this domain, do not fail open —
-        // always trigger the bypass so the Cloudflare WebView appears on first
-        // launch (and on TV where the invisible solver may not complete).
+        // Always trigger bypass when no cookie exists — never fail open.
+        // When a cookie exists, validate it; if Cloudflare challenges, the
+        // bypass opens. This matches Phisher: the WebView appears on challenge.
         val hasCookie = Settings.hasSavedCookieForDomain(solveUrl)
         if (hasCookie && isCookieValid(solveUrl)) {
             Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: cookie valid, skipping bypass for $solveUrl")
             return false
         }
         if (!hasCookie) {
-            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: no saved cookie, triggering bypass for $solveUrl")
+            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: no saved cookie, opening bypass for $solveUrl")
         }
 
-        // plugin.load() is handed the application context, which has no
-        // FragmentManager — that is why no WebView ever appeared at app open.
-        // Fall back to CloudStream's current Activity.
         val ctx = currentActivity()
         if (ctx == null) {
             Log.w(CF_LOG_TAG, "probeAndResolveIfNeeded: no Activity available for bypass")
@@ -388,10 +386,6 @@ object CineStreamExtractors {
         }
 
         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: Cloudflare detected, showing bypass WebView")
-        // Claim the solve atomically. isCookieValid() above is a network call,
-        // so several parallel challenged requests can all reach this point.
-        // Only one may start the WebView; the rest await the winner instead of
-        // spawning a second invisible WebView and a second page load.
         val deferred = CompletableDeferred<Boolean>()
         val existing = bypassInFlight.putIfAbsent(key, deferred)
         if (existing != null) {
@@ -411,19 +405,18 @@ object CineStreamExtractors {
                         deferred.complete(success)
                         if (continuation.isActive) continuation.resume(success)
                     }
-                    // The dialog is already open (e.g. the settings button).
-                    // Do not wait on a callback that this call will never get.
                     if (!launched && continuation.isActive) {
                         deferred.complete(false)
                         continuation.resume(false)
+                    }
+                    continuation.invokeOnCancellation {
+                        if (deferred.isActive) deferred.complete(false)
                     }
                 }
             }
             if (!solved) return false
 
-            // The request that triggered the probe was challenged; re-validate
-            // once the fresh clearance is persisted, exactly like Phisher's
-            // wait-and-retry.
+            // Re-validate with the fresh clearance, exactly like Phisher's wait-and-retry.
             return isCookieValid(url)
         } finally {
             bypassInFlight.remove(key, deferred)
@@ -432,12 +425,22 @@ object CineStreamExtractors {
 
     /** Current foreground Activity: the plugin's stored context is the app context. */
     private fun currentActivity(): Activity? {
+        // Try the stored context first (may be an Activity if plugin was loaded from one).
         (context as? Activity)?.let {
             if (!it.isFinishing && !it.isDestroyed) return it
         }
-        return runCatching { com.lagradost.cloudstream3.CommonActivity.activity }
+        // Fall back to CloudStream's tracked Activity (set by MainActivity via setActivityInstance).
+        runCatching { com.lagradost.cloudstream3.CommonActivity.activity }
             .getOrNull()
             ?.takeIf { !it.isFinishing && !it.isDestroyed }
+            ?.let { return it }
+        // Last resort: walk the context chain for any Activity.
+        var ctx: Context? = context
+        while (ctx is ContextWrapper) {
+            if (ctx is Activity && !ctx.isFinishing && !ctx.isDestroyed) return ctx
+            ctx = ctx.baseContext
+        }
+        return null
     }
 
     /** True once an Activity exists, so app-open validation can wait for it. */

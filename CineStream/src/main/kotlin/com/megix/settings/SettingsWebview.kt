@@ -116,12 +116,16 @@ internal object SettingsWebView {
         val activity = findFragmentActivity(context)
         if (activity == null) {
             Log.e(TAG, "Cloudflare bypass needs a FragmentActivity; got ${context.javaClass.name}")
+            onCookiesChanged(false)
             return false
         }
-        if (activity.isFinishing || activity.isDestroyed) return false
-        if (activity.supportFragmentManager.findFragmentByTag(CF_FRAGMENT_TAG) != null) {
-            Log.d(TAG, "Cloudflare bypass dialog already open, not stacking another")
+        if (activity.isFinishing || activity.isDestroyed) {
+            onCookiesChanged(false)
             return false
+        }
+        // Don't block on a stale fragment tag — remove it so a new bypass can open.
+        activity.supportFragmentManager.findFragmentByTag(CF_FRAGMENT_TAG)?.let { frag ->
+            runCatching { activity.supportFragmentManager.beginTransaction().remove(frag).commit() }
         }
 
         val targetUrl = startUrl.trim().let {
@@ -149,6 +153,7 @@ internal object SettingsWebView {
                 true
             }.getOrElse {
                 Log.e(TAG, "Cloudflare bypass: failed to show dialog: ${it.message}")
+                onCookiesChanged(false)
                 false
             }
         }
@@ -161,6 +166,7 @@ internal object SettingsWebView {
             // and main-thread stutter while a video is playing.
             if (!claimHeadlessSolve()) {
                 Log.d(TAG, "Cloudflare bypass: invisible solve already running, not stacking another")
+                onCookiesChanged(false)
                 return false
             }
             Log.d(TAG, "Cloudflare bypass: starting invisible headless solve (isTv=$isTv)")
