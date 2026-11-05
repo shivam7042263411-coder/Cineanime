@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 552,
+    "version": 553,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v552: fixes Cloudflare WebView not appearing on TV. (1) Added storedActivity cache in CineStreamExtractors — CineStream.kt now stores the Activity when it becomes available, so currentActivity() finds it even if CommonActivity.activity's WeakReference is cleared. (2) currentActivity() checks storedActivity first, then context, then CommonActivity.activity, then context chain. (3) All v551 fixes retained: bypass always opens when no cookie exists, deferred always completed, stale fragment cleanup, one-solve-at-a-time, per-host cookies, client hints, empty-UA guard, D-pad cursor bounds, TV invisible→visible fallback.",
-    "fileSize": 823194,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v553: fixes visible Cloudflare dialog being invisible when toggle OFF. (1) bottom sheet now starts expanded (startExpanded = true) so it is actually seen on phone and TV — previously peekHeight 0 left it collapsed/invisible. (2) Added logging in showCloudflareBypass and showVisible to trace webViewVisible value on both platforms. (3) All v552 fixes retained: storedActivity cache so bypass always finds Activity on TV, bypass always opens when no cookie exists, deferred always completed, stale fragment cleanup, one-solve-at-a-time, per-host cookies, client hints, empty-UA guard, D-pad cursor bounds, TV invisible→visible fallback.",
+    "fileSize": 823163,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-54e2001c12a73a334ef15b8a9877e6955506e5f3a4291fe7202c4359dda15f38"
+    "fileHash": "sha256-bd11c7f441b00e337c824a37af05ccf7d563ba635cdbdc230f984691d97d110e"
   }
 ]

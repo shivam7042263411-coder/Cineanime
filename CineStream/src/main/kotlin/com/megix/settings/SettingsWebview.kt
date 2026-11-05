@@ -142,10 +142,14 @@ internal object SettingsWebView {
         // Visible mode: show the bottom sheet dialog. Extracted so invisible mode
         // can fall back to it on TV when the headless solver can't complete.
         fun showVisible(): Boolean {
+            Log.d(TAG, "showVisible: launching visible Cloudflare dialog for $targetUrl")
             return runCatching {
                 CloudflareWebViewDialog.newInstance(
                     targetUrl,
-                    startExpanded = false,
+                    // Start expanded so the visible dialog is actually seen on
+                    // both phone and TV. startExpanded = false leaves the
+                    // bottom sheet collapsed at peekHeight 0 — invisible.
+                    startExpanded = true,
                     webViewVisible = true,
                     onFinished = onCookiesChanged,
                 )
