@@ -21,9 +21,13 @@ object Settings {
     const val GRAMCINEMA_TOKEN_KEY     = "gramcinema_bearer_token"
     const val STREMIO_ADDONS_KEY       = "stremio_addons"
     const val NEW_PROVIDER_DEFAULT_ON  = "new_provider_default_on"
-    const val CF_BYPASS_ENABLED        = "cloudflare_webview_bypass_enabled"
-    const val CF_USER_AGENT_KEY        = "cf_user_agent"
-    const val CF_WEBVIEW_HIDDEN        = "cloudflare_webview_hidden"
+
+    // ── CF cookie storage keys (Phisher pattern) ─────────────────────────
+    private const val CF_COOKIES_KEY = "ANIMEPAHE_CF_COOKIES"
+    private const val CF_USER_AGENT_KEY = "ANIMEPAHE_CF_USER_AGENT"
+    private const val CF_COOKIE_HOST_KEY = "ANIMEPAHE_CF_COOKIE_HOST"
+    private const val CF_WEBVIEW_ENABLED_KEY = "ANIMEPAHE_CF_WEBVIEW_ENABLED"
+    private const val CF_BYPASS_ENABLED        = "cloudflare_webview_bypass_enabled"
 
     // ── Per-domain cookie timestamp (Cloudflare bypass staleness) ────────
     private const val CF_COOKIE_SAVED_AT_PREFIX = "cf_cookie_saved_at_"
@@ -43,29 +47,51 @@ object Settings {
         setKey(cookieTsKeyForDomain(urlOrDomain), ts)
     }
 
-    /**
-     * Last saved time for a domain, used for diagnostics/logging only.
-     * Validity is decided by a real request (CineStreamExtractors.isCookieValid),
-     * never by age: a cookie can be revoked while its timestamp is young.
-     */
+    /** Last saved time for a domain, used for diagnostics/logging only. */
     fun getCookieTimestamp(urlOrDomain: String): Long? =
         getKey<Long>(cookieTsKeyForDomain(urlOrDomain))
 
-    /** Is the Cloudflare bypass WebView hidden (invisible solve)? When true, no UI is shown. */
-    fun cloudflareWebViewHidden(): Boolean = getKey<Boolean>(CF_WEBVIEW_HIDDEN) ?: true
+    /** Is the Cloudflare bypass WebView hidden (invisible solve)? */
+    fun cloudflareWebViewHidden(): Boolean = getKey<Boolean>(CF_WEBVIEW_ENABLED_KEY) ?: true
 
-    /** Is the Cloudflare bypass WebView visible (shown)? Opposite of cloudflareWebViewHidden(). */
+    /** Is the Cloudflare bypass WebView visible (shown)? */
     fun cloudflareWebViewVisible(): Boolean = !cloudflareWebViewHidden()
 
-    fun saveCfUserAgent(userAgent: String) {
-        if (userAgent.isNotBlank()) setKey(CF_USER_AGENT_KEY, userAgent.trim())
+    // ── CF cookie persistence ──────────────────────────────────────────────
+
+    fun saveCfCookies(cookies: String) {
+        if (cookies.isNotBlank()) {
+            setKey(CF_COOKIES_KEY, cookies.trim())
+        }
     }
 
-    fun getCfUserAgent(): String? =
-        getKey<String>(CF_USER_AGENT_KEY)?.takeIf { it.isNotBlank() }
+    fun getCfCookies(): String =
+        getKey<String>(CF_COOKIES_KEY) ?: ""
 
-    private const val SEEN_PROVIDERS_KEY = "seen_providers"
-    private const val PROVIDER_ORDER_KEY = "provider_order"
+    fun saveCfUserAgent(ua: String) {
+        if (ua.isNotBlank()) {
+            setKey(CF_USER_AGENT_KEY, ua.trim())
+        }
+    }
+
+    fun getCfUserAgent(): String =
+        getKey<String>(CF_USER_AGENT_KEY) ?: ""
+
+    fun saveCfCookieHost(host: String) {
+        if (host.isNotBlank()) {
+            setKey(CF_COOKIE_HOST_KEY, host.trim())
+        }
+    }
+
+    fun getCfCookieHost(): String =
+        getKey<String>(CF_COOKIE_HOST_KEY) ?: ""
+
+    fun saveCfWebviewEnabled(enabled: Boolean) {
+        setKey(CF_WEBVIEW_ENABLED_KEY, enabled)
+    }
+
+    fun isCfWebviewEnabled(): Boolean =
+        getKey<Boolean>(CF_WEBVIEW_ENABLED_KEY) ?: true
 
     // ── Configuration Getters ────────────────────────────────
     fun getConcurrency(): Int = getKey<Int>(CONCURRENCY_KEY) ?: 10
@@ -138,54 +164,38 @@ object Settings {
     }
 
     /**
-     * Remove every Cloudflare cookie this plugin saved, plus the clearance
-     * cookies still sitting in the shared WebView jar. Clearing only the
-     * stored copy would not be enough: [CineStreamExtractors.injectWebviewCookies]
-     * falls back to the jar, so a still-valid clearance would keep working and
-     * "clear cookies" would look like a no-op.
-     *
-     * @return how many domains had a saved cookie.
+     * Purges CF cookies from the shared WebView jar. Clears under host-only,
+     * Domain=.host, and Domain=host forms so nothing lingers.
      */
-    fun clearAllCookies(): Int {
-        var cleared = 0
-        getCloudflareBypassDomains().forEach { site ->
-            if (hasSavedCookieForDomain(site.domain)) cleared++
-            setKey(cookieKeyForDomain(site.domain), null as String?)
-            setKey(cookieTsKeyForDomain(site.domain), null as Long?)
-        }
+    fun clearJarCookies(host: String) {
+        val domain = host.removePrefix("www.")
+        val urls = listOf(
+            "https://$host/",
+            "https://www.$host/",
+        )
+        val cookieNames = listOf("cf_clearance", "__cf_bm", "cf_chl_rc_ni", "cf_chl_prog", "__ddg1_", "__ddg2_", "__cfruid")
 
-        runCatching {
-            val cookieManager = CookieManager.getInstance()
-            getCloudflareBypassDomains().forEach { site ->
-                linkedSetOf(
-                    "https://${site.domain}",
-                    "https://www.${site.domain}",
-                ).forEach { host ->
-                    val url = "$host/"
-                    val existing = cookieManager.getCookie(url) ?: return@forEach
-                    existing.split(";").forEach { part ->
-                        val name = part.trim().substringBefore('=').trim()
-                        if (name == "cf_clearance" || name == "__cf_bm" || name.startsWith("cf_chl")) {
-                            // A host-only delete misses a cookie stored with
-                            // an explicit Domain attribute, which made "Clear
-                            // all cookies" leave a usable token behind.
-                            listOf("", "; Domain=.${site.domain}", "; Domain=${site.domain}").forEach { domainAttr ->
-                                cookieManager.setCookie(
-                                    url,
-                                    "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/$domainAttr",
-                                )
-                            }
-                        }
-                    }
-                }
+        val manager = CookieManager.getInstance()
+        urls.forEach { url ->
+            cookieNames.forEach { name ->
+                manager.setCookie(url, "$name=; domain=$domain; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                manager.setCookie(url, "$name=; domain=.$domain; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                manager.setCookie(url, "$name=; path=/; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT")
             }
-            cookieManager.flush()
         }
-        return cleared
+        manager.flush()
     }
 
+    fun clearAll() {
+        setKey(CF_COOKIES_KEY, null as String?)
+        setKey(CF_USER_AGENT_KEY, null as String?)
+        setKey(CF_COOKIE_HOST_KEY, null as String?)
+    }
+
+    fun hasCookies(): Boolean =
+        getCfCookies().isNotBlank()
+
     // ── Dynamic Provider Maps ────────────────────────────────
-    // We dynamically pull these from our single source of truth (ProviderRegistry)!
     val TORRENT_KEYS: Set<String> get() = ProviderRegistry.torrentKeys
     val PROVIDER_NAMES: Map<String, String> get() = ProviderRegistry.namesMap
     val DEFAULT_ORDER: List<String> get() = ProviderRegistry.keys
@@ -195,7 +205,7 @@ object Settings {
     fun newProviderDefaultOn(): Boolean = getKey<Boolean>(NEW_PROVIDER_DEFAULT_ON) ?: true
 
     fun getSeenProviders(): Set<String> =
-        getKey<String>(SEEN_PROVIDERS_KEY)
+        getKey<String>("seen_providers")
             ?.split(",")?.filter { it.isNotBlank() }?.toSet()
             ?: emptySet()
 
@@ -205,7 +215,7 @@ object Settings {
         val currentSeen = getSeenProviders()
 
         if (currentSeen.isEmpty()) {
-            setKey(SEEN_PROVIDERS_KEY, allKnown.joinToString(","))
+            setKey("seen_providers", allKnown.joinToString(","))
             return
         }
 
@@ -224,7 +234,7 @@ object Settings {
         val removedKeys = currentSeen - allKnown
         removedKeys.forEach { setKey(it, null as Boolean?) }
         val prunedSeen  = (currentSeen - removedKeys) + allKnown
-        setKey(SEEN_PROVIDERS_KEY, prunedSeen.joinToString(","))
+        setKey("seen_providers", prunedSeen.joinToString(","))
     }
 
     fun markProvidersSeen(keys: Collection<String>) {
@@ -240,7 +250,7 @@ object Settings {
             }
         }
         val merged = currentlySeen + keys
-        setKey(SEEN_PROVIDERS_KEY, merged.joinToString(","))
+        setKey("seen_providers", merged.joinToString(","))
     }
 
     fun enabled(key: String): Boolean {
@@ -255,7 +265,7 @@ object Settings {
     fun getOrder(): List<String> {
         val stremioKeys = getStremioAddons().map { stremioAddonKey(it.name) }
         val allKnown    = DEFAULT_ORDER + stremioKeys
-        val saved       = getKey<String>(PROVIDER_ORDER_KEY)
+        val saved       = getKey<String>("provider_order")
             ?.split(",")?.filter { it.isNotBlank() }
             ?: return allKnown
 
@@ -264,7 +274,7 @@ object Settings {
     }
 
     fun saveOrder(order: List<String>) =
-        setKey(PROVIDER_ORDER_KEY, order.joinToString(","))
+        setKey("provider_order", order.joinToString(","))
 
     // ── Stremio addon helpers ────────────────────────────────
 
@@ -314,7 +324,7 @@ object Settings {
         if (addons.isEmpty()) setKey(STREMIO_ADDONS_KEY, null as String?)
         else setKey(STREMIO_ADDONS_KEY, addons.joinToString("\n") { "${it.name}|${it.url}|${it.type}" })
         val validKeys = addons.map { stremioAddonKey(it.name) }.toSet()
-        val current   = getKey<String>(PROVIDER_ORDER_KEY)
+        val current   = getKey<String>("provider_order")
             ?.split(",")?.filter { it.isNotBlank() } ?: return
         val pruned = current.filter { !it.startsWith("stremio_") || it in validKeys }
         if (pruned.size != current.size) saveOrder(pruned)

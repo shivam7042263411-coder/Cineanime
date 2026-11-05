@@ -708,7 +708,7 @@ class CineAnimeProvider : MainAPI() {
         CineStreamExtractors.probeAndResolveIfNeeded("https://animepahe.pw/")
 
         val collected = mutableListOf<ExtractorLink>()
-        val result = AnimePahe.invoke(res, subtitleCallback) { link ->
+        val result = AnimePahe.loadLinks(data, subtitleCallback) { link ->
             collected.add(link)
             callback.invoke(link)
         }
