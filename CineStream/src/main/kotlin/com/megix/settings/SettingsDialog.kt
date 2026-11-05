@@ -279,7 +279,12 @@ internal object SettingsDialog {
                 cookieStatus.text = "Checking the saved cookie with Cloudflare…"
                 cookieStatus.setTextColor(theme.TEXT_SECONDARY)
                 uiScope.launch {
-                    val valid = CineStreamExtractors.isCookieValid("https://animepahe.pw/")
+                    // Check the mirror that actually holds the cookie. A
+                    // clearance solved on .org is rejected by .pw, which made
+                    // every saved cookie look invalid.
+                    val checkUrl = (CineStreamExtractors.savedAnimePaheHost()
+                        ?: "https://animepahe.pw") + "/"
+                    val valid = CineStreamExtractors.isCookieValid(checkUrl)
                     checking = false
                     checkBtn.isEnabled = true
                     checkBtn.alpha = 1f
@@ -362,11 +367,11 @@ internal object SettingsDialog {
                 lateinit var actionsRow: LinearLayout
 
                 fun refreshRow() {
-                    val hasCookie = Settings.getCfCookies().isNotBlank()
+                    val hasCookie = Settings.hasSavedCookieForDomain(host)
                     statusText.text = if (hasCookie) "✓ Saved" else "Not Saved"
                     statusText.setTextColor(if (hasCookie) Color.parseColor("#10B981") else Color.parseColor("#6B7280"))
 
-                    val anyCookie = Settings.getCfCookies().isNotBlank()
+                    val anyCookie = CineStreamExtractors.savedAnimePaheHost() != null
                     clearBtn.isEnabled = anyCookie
                     clearBtn.isFocusable = anyCookie
                     clearBtn.alpha = if (anyCookie) 1f else 0.4f
@@ -382,7 +387,10 @@ internal object SettingsDialog {
                     if (hasCookie) {
                         actionsRow.addView(SettingsWidgets.hSpacer(context, 6))
                         actionsRow.addView(SettingsWidgets.pillBtn(context, "✕ Remove", Color.parseColor("#EF4444"), Color.parseColor("#0B1120"), Color.parseColor("#DC2626")) {
-                            Settings.clearAll()
+                            // Remove only this mirror's cookie: the others hold
+                            // their own host-bound clearance.
+                            Settings.removeCookieForDomain(host)
+                            Settings.clearJarCookies(host)
                             CineStreamExtractors.invalidateCookieCache()
                             refreshRow()
                             Toast.makeText(context, "Cookie removed for $displayName", Toast.LENGTH_SHORT).show()

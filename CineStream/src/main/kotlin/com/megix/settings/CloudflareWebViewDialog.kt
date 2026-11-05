@@ -263,21 +263,22 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
             fun extractCookies(): String {
                 cookieManager.flush()
-                val urls = linkedSetOf<String>()
-                webView.url
+
+                // Read cookies for the host that is actually solving the
+                // challenge. Never merge other AnimePahe mirrors into one
+                // map: cf_clearance is host-bound, and a stale token from a
+                // mirror would overwrite the fresh one (last write wins),
+                // producing a "saved" cookie that Cloudflare then rejects.
+                val pageUrl = webView.url
                     ?.takeIf { it.isNotBlank() && !isCloudflareOwnHost(it) }
-                    ?.let { urls.add(it) }
-                if (targetUrl.isNotBlank() && !isCloudflareOwnHost(targetUrl)) urls.add(targetUrl)
-                if (targetHost.isNotBlank()) {
-                    urls.add(targetHost)
-                    urls.add("$targetHost/")
-                }
-                urls.add("https://animepahe.pw/")
-                urls.add("https://animepahe.org/")
-                urls.add("https://animepahe.com/")
+                    ?: targetUrl
+                val host = runCatching { Uri.parse(pageUrl).host }.getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: targetDomain
+                val bareHost = host.removePrefix("www.")
 
                 val cookies = LinkedHashMap<String, String>()
-                urls.forEach { url ->
+                linkedSetOf("https://$bareHost/", "https://www.$bareHost/").forEach { url ->
                     val raw = runCatching { cookieManager.getCookie(url) }.getOrNull()
                     if (!raw.isNullOrBlank()) {
                         raw.split(";").forEach { part ->
@@ -326,32 +327,23 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
                     if (hasClearanceCookie) {
                         cookiesSaved = true
-                        val currentUrl = webView.url ?: targetUrl
-                        val currentHost = runCatching {
-                            val uri = Uri.parse(currentUrl)
-                            "${uri.scheme}://${uri.host}"
-                        }.getOrDefault(targetHost)
+                        val currentUrl = webView.url
+                            ?.takeIf { it.isNotBlank() && !isCloudflareOwnHost(it) }
+                            ?: targetUrl
+                        val solvedHost = runCatching { Uri.parse(currentUrl).host }
+                            .getOrNull()?.takeIf { it.isNotBlank() } ?: targetDomain
+                        val saveHost = solvedHost.removePrefix("www.")
 
-                        // Same as the visible path: save under every AnimePahe
-                        // host so a clearance earned on .pw also covers the
-                        // mirror the stream request actually hits.
-                        val allHosts = linkedSetOf(
-                            currentHost,
-                            targetHost,
-                            "https://animepahe.pw",
-                            "https://www.animepahe.pw",
-                            "https://animepahe.org",
-                            "https://www.animepahe.org",
-                            "https://animepahe.com",
-                            "https://www.animepahe.com",
-                        ).filter { it.isNotBlank() }
-                        allHosts.forEach { host -> Settings.saveCookieForDomain(host, cookieStr) }
+                        // cf_clearance is host-bound: persist it only for the
+                        // host that issued it. Copying it to the other mirrors
+                        // is invalid there and would shadow a later fresh solve.
+                        Settings.saveCookieForDomain(saveHost, cookieStr)
 
                         webView.settings.userAgentString
                             ?.takeIf { it.isNotBlank() }
                             ?.let { Settings.saveCfUserAgent(it) }
 
-                        Log.d(TAG, "Headless CF solve: ✅ Saved cookies for ${allHosts.size} hosts")
+                        Log.d(TAG, "Headless CF solve: ✅ Saved cookies for $saveHost")
                         hasNotified = true
                         handler.removeCallbacks(this)
                         webView.stopLoading()
@@ -887,35 +879,22 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         val cookieManager = CookieManager.getInstance()
         cookieManager.flush()
 
-        val urls = linkedSetOf<String>()
-        webView?.url
+        // Read cookies for the host that is actually solving the challenge —
+        // never merge other AnimePahe mirrors into one map. cf_clearance is
+        // host-specific, and a stale token from a mirror would overwrite the
+        // fresh one (last write wins), producing a "saved" cookie that
+        // Cloudflare then rejects.
+        val pageUrl = webView?.url
             ?.takeIf { it.isNotBlank() && !isCloudflareOwnHost(it) }
-            ?.let { urls.add(it) }
-        if (targetUrl.isNotBlank() && !isCloudflareOwnHost(targetUrl)) urls.add(targetUrl)
-        if (targetHost.isNotBlank()) {
-            urls.add(targetHost)
-            urls.add("$targetHost/")
-            // Cloudflare often sets cf_clearance on www subdomain too.
-            urls.add(targetHost.replace("animepahe.", "www.animepahe.") + "/")
-            // Also try without https:// prefix (some WebView builds need it).
-            urls.add(targetHost.replace("https://", ""))
-        }
-        urls.add("https://animepahe.pw/")
-        urls.add("https://www.animepahe.pw/")
-        urls.add("https://animepahe.org/")
-        urls.add("https://www.animepahe.org/")
-        urls.add("https://animepahe.com/")
-        urls.add("https://www.animepahe.com/")
-        // CookieManager sometimes needs the domain without scheme.
-        urls.add("animepahe.pw")
-        urls.add("www.animepahe.pw")
-        urls.add("animepahe.org")
-        urls.add("www.animepahe.org")
-        urls.add("animepahe.com")
-        urls.add("www.animepahe.com")
+            ?: targetUrl
+        val host = runCatching { Uri.parse(pageUrl).host }.getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?: targetDomain
+        val bareHost = host.removePrefix("www.")
 
+        // CookieManager needs the URL form; cover both www and apex.
         val cookies = LinkedHashMap<String, String>()
-        urls.forEach { url ->
+        linkedSetOf("https://$bareHost/", "https://www.$bareHost/").forEach { url ->
             val raw = runCatching { cookieManager.getCookie(url) }.getOrNull()
             if (!raw.isNullOrBlank()) {
                 raw.split(";").forEach { part ->
@@ -942,36 +921,25 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         cookiesSaved = true
         handler.removeCallbacks(cookiePollRunnable)
 
-        val currentUrl = webView?.url ?: targetUrl
-        val currentHost = runCatching {
-            val uri = Uri.parse(currentUrl)
-            "${uri.scheme}://${uri.host}"
-        }.getOrDefault(targetUrl)
-
-        // Save the cookie under ALL AnimePahe domains, not just the one that
-        // solved the challenge. cf_clearance is domain-specific, and stream
-        // requests may go to a different AnimePahe host than the challenge URL.
-        val allHosts = linkedSetOf(
-            currentHost,
-            targetHost,
-            "https://animepahe.pw",
-            "https://www.animepahe.pw",
-            "https://animepahe.org",
-            "https://www.animepahe.org",
-            "https://animepahe.com",
-            "https://www.animepahe.com",
-        ).filter { it.isNotBlank() }
-        allHosts.forEach { host ->
-            Settings.saveCookieForDomain(host, cookieStr)
-            Log.d(TAG, "Saved cookie for $host")
-        }
+        // Save only the host that minted the clearance. Copying it to the
+        // other AnimePahe mirrors is useless (cf_clearance is host-bound) and
+        // lets a stale token masquerade as valid there.
+        val solvedHost = runCatching {
+            val uri = Uri.parse(
+                webView?.url?.takeIf { it.isNotBlank() && !isCloudflareOwnHost(it) } ?: targetUrl
+            )
+            uri.host
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: targetDomain
+        val saveHost = solvedHost.removePrefix("www.")
+        Settings.saveCookieForDomain(saveHost, cookieStr)
+        Log.d(TAG, "Saved cookie for $saveHost")
 
         // Save the cleaned UA that was actually used to solve the challenge.
         webView?.settings?.userAgentString
             ?.takeIf { it.isNotBlank() }
             ?.let { Settings.saveCfUserAgent(it) }
 
-        Log.d(TAG, "✅ Saved cookies for ${allHosts.size} AnimePahe hosts: $cookieStr")
+        Log.d(TAG, "✅ Saved cookies for $saveHost: $cookieStr")
         updateStatus("✅ Done! Cloudflare bypassed.")
         notifyFinished(true)
 

@@ -192,6 +192,9 @@ object Settings {
         setKey(CF_COOKIES_KEY, null as String?)
         setKey(CF_USER_AGENT_KEY, null as String?)
         setKey(CF_COOKIE_HOST_KEY, null as String?)
+        // Per-domain keys are the ones the solver actually writes; clearing
+        // only the legacy global keys left every saved cf_clearance behind.
+        CLOUDFLARE_BYPASS_SITES.forEach { removeCookieForDomain(it.domain) }
     }
 
     fun hasCookies(): Boolean =

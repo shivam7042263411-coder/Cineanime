@@ -104,10 +104,21 @@ object CineStreamExtractors {
     // WebViewResolver value (which is a different, uncleaned string and can
     // be stale). The in-memory value stays as a fallback only.
     fun currentCfUserAgent(): String =
-        Settings.getCfUserAgent()
+        Settings.getCfUserAgent().takeIf { it.isNotBlank() }
             ?: runCatching { com.lagradost.cloudstream3.network.WebViewResolver.webViewUserAgent }
                 .getOrNull()?.takeIf { it.isNotBlank() }
             ?: CF_BYPASS_USER_AGENT
+
+    /** AnimePahe mirrors in default preference order. */
+    fun animePaheMirrors(): List<String> = listOf(
+        "https://animepahe.pw",
+        "https://animepahe.org",
+        "https://animepahe.com",
+    )
+
+    /** AnimePahe host that currently holds a saved cookie, if any. */
+    fun savedAnimePaheHost(): String? =
+        animePaheMirrors().firstOrNull { Settings.hasSavedCookieForDomain(it) }
 
     // CloudflareKiller's init wipes the WebView cookie jar. Re-seed our
     // persisted cookies right after construction so a still-valid
@@ -128,21 +139,11 @@ object CineStreamExtractors {
         val cookie = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
         if (!cookie.contains("cf_clearance")) return
 
-        // Save under ALL AnimePahe hosts so stream requests on any mirror
-        // can use the same clearance cookie.
-        val allHosts = linkedSetOf(
-            host,
-            "animepahe.pw",
-            "www.animepahe.pw",
-            "animepahe.org",
-            "www.animepahe.org",
-            "animepahe.com",
-            "www.animepahe.com",
-        ).filter { it.isNotBlank() }
-        allHosts.forEach { h ->
-            Settings.saveCookieForDomain(h, cookie)
-        }
-        Log.d(CF_LOG_TAG, "persistSolvedCookies: saved cf_clearance for ${allHosts.size} hosts")
+        // Save only the host that minted the clearance. cf_clearance is
+        // host-bound, so copying it to unrelated hosts is invalid and lets a
+        // stale token shadow a later fresh solve.
+        Settings.saveCookieForDomain(host, cookie)
+        Log.d(CF_LOG_TAG, "persistSolvedCookies: saved cf_clearance for $host")
 
         // Clean the UA the same way the bypass WebView does, so the saved UA
         // always matches what requests actually send. Cloudflare binds
@@ -337,8 +338,14 @@ object CineStreamExtractors {
         }
 
         // Never load an API/JSON endpoint in the solver: it must fetch a page
-        // that can present the challenge. Site root is the safe target.
-        val solveUrl = if (key == "animepahe") "https://animepahe.pw/" else url
+        // that can present the challenge. Use the site root of the host being
+        // requested — a clearance minted on one mirror is rejected by another,
+        // so solving a hardcoded .pw left every .org/.com request challenged.
+        val solveUrl = if (key == "animepahe") {
+            val uri = Uri.parse(url)
+            val host = uri.host
+            if (host.isNullOrBlank()) "https://animepahe.pw/" else "https://$host/"
+        } else url
 
         if (!force) {
             // Only a recent successful validation buys a skip. Cookie age
@@ -458,14 +465,23 @@ object CineStreamExtractors {
         Log.d(CF_LOG_TAG, "injectWebviewCookies: match=$match url=$url")
         if (!match) return headers
 
+        // Match the WebView that solved the challenge. Phisher's
+        // CFBypassInterceptor does this on every request: Cloudflare treats a
+        // request without the same client hints as a different client and
+        // rejects the clearance.
+        val merged = headers.toMutableMap().apply {
+            remove("X-Requested-With")
+            put("sec-ch-ua-mobile", "?1")
+            put("sec-ch-ua-platform", "\"Android\"")
+        }
+
         val savedCookie = Settings.getCookieForDomain(url)
         val cookieValue = savedCookie?.takeIf { it.isNotBlank() }
             ?: CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }
-            ?: return headers
+            ?: return merged
 
         Log.d(CF_LOG_TAG, "injectWebviewCookies: injecting cookies for $url => ${cookieValue.take(50)}...")
 
-        val merged = headers.toMutableMap()
         merged["Cookie"] = mergeCookieStrings(merged["Cookie"].orEmpty(), cookieValue)
         return merged
     }

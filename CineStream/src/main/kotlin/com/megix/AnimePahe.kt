@@ -6,6 +6,7 @@ import com.lagradost.api.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.nicehttp.NiceResponse
+import com.megix.settings.Settings
 import kotlinx.coroutines.delay
 import org.jsoup.Jsoup
 import java.net.URLEncoder
@@ -166,7 +167,14 @@ object AnimePahe {
             callback(it)
         }
 
-        for (base in mirrors) {
+        // Prefer the mirror that already holds a saved clearance: cf_clearance
+        // is host-bound, so hitting an unsolved mirror first only triggers
+        // another challenge. Stable sort keeps the default order as fallback.
+        val orderedMirrors = mirrors.sortedByDescending {
+            Settings.hasSavedCookieForDomain(it)
+        }
+
+        for (base in orderedMirrors) {
             suspend fun resultsFor(alias: String): List<PaheSearchItem> {
                 val key = "$base|$alias"
                 searchCache[key]?.let {
