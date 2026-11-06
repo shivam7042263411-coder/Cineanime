@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 553,
+    "version": 554,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v553: fixes visible Cloudflare dialog being invisible when toggle OFF. (1) bottom sheet now starts expanded (startExpanded = true) so it is actually seen on phone and TV — previously peekHeight 0 left it collapsed/invisible. (2) Added logging in showCloudflareBypass and showVisible to trace webViewVisible value on both platforms. (3) All v552 fixes retained: storedActivity cache so bypass always finds Activity on TV, bypass always opens when no cookie exists, deferred always completed, stale fragment cleanup, one-solve-at-a-time, per-host cookies, client hints, empty-UA guard, D-pad cursor bounds, TV invisible→visible fallback.",
-    "fileSize": 823163,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v554: fixes TV saving an invalid Cloudflare cookie. (1) The visible dialog now snapshots any cf_clearance that existed BEFORE the cookie purge. The purge is asynchronous, so a stale token could survive it; because initialClearance was never set in visible mode, the first 2s poll treated that stale token as fresh, closed the dialog, and saved an invalid cookie. (2) The headless solver snapshots the same pre-purge token. (3) isCloudflarePage no longer treats a bare HTTP 403/503 as a Cloudflare challenge — kwik.cx returns 403 for expired/hotlink-blocked embeds, which popped a pointless kwik bypass during playback. Real challenges still match on the interstitial body or cf-mitigated header. (4) All v553 fixes retained: visible sheet starts expanded, storedActivity cache, bypass always opens when no cookie exists, deferred always completed, stale fragment cleanup, one-solve-at-a-time, per-host cookies, client hints, empty-UA guard, D-pad cursor bounds, TV invisible→visible fallback.",
+    "fileSize": 823228,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-bd11c7f441b00e337c824a37af05ccf7d563ba635cdbdc230f984691d97d110e"
+    "fileHash": "sha256-4060ceb7b803fae33ec238882a4b75238118301240ecb803fd77b6b87a419730"
   }
 ]

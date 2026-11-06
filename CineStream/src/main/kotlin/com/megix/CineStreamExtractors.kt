@@ -241,23 +241,29 @@ object CineStreamExtractors {
         }
 
     private fun isCloudflarePage(response: NiceResponse): Boolean {
-        if (response.code in listOf(403, 503)) return true
         // Cloudflare marks managed challenges explicitly.
         if (response.headers["cf-mitigated"]?.contains("challenge", ignoreCase = true) == true) return true
-        // Cloudflare also serves the interstitial with HTTP 200. Without this
-        // check the caller parses the challenge HTML as if it were data and
-        // the solver never runs. Newer interstitials changed their wording,
-        // so match every known variant instead of only the old one.
-        val body = runCatching { response.text }.getOrNull() ?: return false
-        val lower = body.lowercase()
-        return lower.contains("just a moment") ||
-            lower.contains("cf-chl") ||
-            lower.contains("attention required") ||
-            lower.contains("enable javascript and cookies") ||
-            lower.contains("verifying you are human") ||
-            lower.contains("checking your browser") ||
-            lower.contains("one more step") ||
-            lower.contains("cf-mitigated")
+        // The interstitial is often served with HTTP 200, so the body is the
+        // real signal. Match every known variant instead of only the old one.
+        val body = runCatching { response.text }.getOrNull()
+        if (body != null) {
+            val lower = body.lowercase()
+            if (lower.contains("just a moment") ||
+                lower.contains("cf-chl") ||
+                lower.contains("attention required") ||
+                lower.contains("enable javascript and cookies") ||
+                lower.contains("verifying you are human") ||
+                lower.contains("checking your browser") ||
+                lower.contains("one more step") ||
+                lower.contains("cf-mitigated")
+            ) return true
+        }
+        // A bare 403/503 is NOT proof of a solvable Cloudflare challenge:
+        // kwik.cx (and other CDNs) return 403 for expired or hotlink-blocked
+        // embeds, and popping the bypass WebView for those interrupted
+        // playback for nothing. Real challenges always carry the interstitial
+        // body or the cf-mitigated header above.
+        return false
     }
 
     // One cheap request that answers the only question that matters: does

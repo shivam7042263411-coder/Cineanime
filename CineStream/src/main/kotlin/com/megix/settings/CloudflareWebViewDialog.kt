@@ -195,6 +195,15 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             webView.clearCache(true)
             webView.clearHistory()
 
+            // Snapshot any cf_clearance that existed before the purge. The
+            // purge is asynchronous, so a stale token can survive it; without
+            // this snapshot the first poll would accept that stale token as
+            // freshly minted and save an invalid cookie.
+            var initialClearance = extractClearanceToken(
+                runCatching { cookieManager.getCookie("$targetHost/") }.getOrNull().orEmpty()
+            )
+            Log.d(TAG, "Headless CF solve: initialClearance=${initialClearance?.take(12)}")
+
             // Purge any stale CF cookies from the jar to force a fresh challenge
             val domain = targetDomain.removePrefix("www.")
             val names = listOf("cf_clearance", "__cf_bm", "cf_chl_rc_ni", "cf_chl_prog", "__ddg1_", "__ddg2_", "__cfruid", "__cflb")
@@ -316,7 +325,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             // after Cloudflare writes the new token, killing the first
             // successful solve), so keep it; the poll accepts it only once
             // the page has loaded past the challenge (see isUsableClearance).
-            var initialClearance = extractClearanceToken(extractCookies())
+            // `initialClearance` was snapshotted before the purge above.
 
             val pollRunnable = object : Runnable {
                 override fun run() {
@@ -380,8 +389,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             }
 
             // Remember the pre-solve clearance; see isUsableClearance for when
-            // an unchanged token may be accepted.
-            initialClearance = extractClearanceToken(extractCookies())
+            // an unchanged token may be accepted. Already snapshotted before
+            // the purge — do not overwrite it here with a post-purge read.
 
             webView.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
@@ -735,6 +744,16 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         cookieManager.setAcceptCookie(true)
         webView?.let { cookieManager.setAcceptThirdPartyCookies(it, true) }
         cookieManager.flush()
+
+        // Snapshot any cf_clearance that already existed before this solve.
+        // The purge below is asynchronous (setCookie + flush are queued), so a
+        // stale token can survive it. Without this snapshot the first poll at
+        // 2s would treat that stale token as freshly minted and close the
+        // dialog with a cookie Cloudflare had already rejected — the "says
+        // done in 2 seconds but Settings shows invalid" bug on TV.
+        initialClearance = extractClearanceToken(extractCookies())
+        Log.d(TAG, "onViewCreated: initialClearance=${initialClearance?.take(12)}")
+
         // Purge ALL Cloudflare cookies from the jar to force a fresh challenge.
         // This is critical: if old cookies exist, Cloudflare won't issue a new challenge.
         val host = targetDomain.removePrefix("www.")
