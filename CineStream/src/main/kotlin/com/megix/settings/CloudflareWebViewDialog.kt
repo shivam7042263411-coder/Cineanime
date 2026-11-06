@@ -198,10 +198,14 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             // Snapshot any cf_clearance that existed before the purge. The
             // purge is asynchronous, so a stale token can survive it; without
             // this snapshot the first poll would accept that stale token as
-            // freshly minted and save an invalid cookie.
+            // freshly minted and save an invalid cookie. Fall back to the
+            // cookie persisted in Settings: on a cold TV start the WebView
+            // cookie store may not have finished loading yet, and that saved
+            // token is exactly the stale one that triggered this bypass.
             var initialClearance = extractClearanceToken(
                 runCatching { cookieManager.getCookie("$targetHost/") }.getOrNull().orEmpty()
-            )
+            ) ?: Settings.getCookieForDomain(targetDomain.removePrefix("www."))
+                ?.let { extractClearanceToken(it) }
             Log.d(TAG, "Headless CF solve: initialClearance=${initialClearance?.take(12)}")
 
             // Purge any stale CF cookies from the jar to force a fresh challenge
@@ -750,8 +754,12 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         // stale token can survive it. Without this snapshot the first poll at
         // 2s would treat that stale token as freshly minted and close the
         // dialog with a cookie Cloudflare had already rejected — the "says
-        // done in 2 seconds but Settings shows invalid" bug on TV.
+        // done in 2 seconds but Settings shows invalid" bug on TV. Fall back
+        // to the cookie persisted in Settings for a cold-start TV WebView
+        // whose cookie store has not finished loading.
+        val solveDomain = targetDomain.removePrefix("www.")
         initialClearance = extractClearanceToken(extractCookies())
+            ?: Settings.getCookieForDomain(solveDomain)?.let { extractClearanceToken(it) }
         Log.d(TAG, "onViewCreated: initialClearance=${initialClearance?.take(12)}")
 
         // Purge ALL Cloudflare cookies from the jar to force a fresh challenge.
