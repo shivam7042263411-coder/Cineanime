@@ -111,6 +111,10 @@ internal object SettingsWebView {
         context: Context,
         startUrl: String,
         webViewVisible: Boolean = true,
+        // Invisible mode must stay invisible. Only the app-open probe opts in
+        // to the TV visible fallback; a challenge detected mid-playback must
+        // never pop a sheet over the episode.
+        allowVisibleFallback: Boolean = true,
         onCookiesChanged: (Boolean) -> Unit = {},
     ): Boolean {
         val activity = findFragmentActivity(context)
@@ -180,10 +184,11 @@ internal object SettingsWebView {
                     if (success) {
                         Log.d(TAG, "Cloudflare bypass: invisible solve succeeded")
                         onCookiesChanged(true)
-                    } else if (isTv) {
+                    } else if (isTv && allowVisibleFallback) {
                         // Invisible solve failed on TV — likely an interactive
                         // Turnstile checkbox the headless WebView can't press.
-                        // Fall back to visible mode so the user can solve it.
+                        // Only the app-open probe may fall back to a visible
+                        // sheet; mid-playback must never interrupt the episode.
                         Log.d(TAG, "Cloudflare bypass: invisible failed on TV, falling back to visible")
                         if (!showVisible()) onCookiesChanged(false)
                     } else {
@@ -195,7 +200,7 @@ internal object SettingsWebView {
             }.getOrElse {
                 releaseHeadlessSolve()
                 Log.e(TAG, "Cloudflare bypass: headless solve failed: ${it.message}")
-                if (isTv && showVisible()) {
+                if (isTv && allowVisibleFallback && showVisible()) {
                     // Visible fallback launched on TV; its onFinished callback
                     // will resolve the deferred. Return true so the coroutine waits.
                     true

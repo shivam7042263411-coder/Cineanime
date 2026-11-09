@@ -127,6 +127,18 @@ object Settings {
 
     fun getCloudflareBypassDomains(): List<BypassDomain> = CLOUDFLARE_BYPASS_SITES
 
+    // Embed/CDN hosts that are behind Cloudflare but must never open the
+    // interactive solver. Solving them mid-playback only interrupts the
+    // episode; if one of these is challenged we fail that link silently and
+    // let the other mirrors/qualities continue.
+    private val CF_EMBED_HOSTS = setOf("kwik.cx")
+
+    fun isEmbedHost(url: String): Boolean {
+        val host = Uri.parse(url).host?.lowercase()?.trim().orEmpty()
+        if (host.isBlank()) return false
+        return CF_EMBED_HOSTS.any { embed -> host == embed || host.endsWith(".$embed") }
+    }
+
     fun hasCloudflareBypassForUrl(url: String): Boolean {
         val host = Uri.parse(url).host?.lowercase()?.trim().orEmpty()
         if (host.isBlank()) return false

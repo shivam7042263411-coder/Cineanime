@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 555,
+    "version": 556,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v555: fixes TV saving an invalid Cloudflare cookie. (1) The visible dialog snapshots any cf_clearance that existed BEFORE the asynchronous cookie purge, falling back to the cookie persisted in Settings when a cold-start TV WebView has not loaded its cookie store yet. Previously initialClearance was never set in visible mode, so the first 2s poll accepted a stale token as fresh, closed the dialog, and saved an invalid cookie. (2) The headless solver snapshots the same pre-purge token. (3) isCloudflarePage no longer treats a bare HTTP 403/503 as a Cloudflare challenge — kwik.cx returns 403 for expired/hotlink-blocked embeds, which popped a pointless kwik bypass during playback. Real challenges still match on the interstitial body or cf-mitigated header. (4) All v553 fixes retained: visible sheet starts expanded, storedActivity cache, bypass always opens when no cookie exists, deferred always completed, stale fragment cleanup, one-solve-at-a-time, per-host cookies, client hints, empty-UA guard, D-pad cursor bounds, TV invisible→visible fallback.",
-    "fileSize": 823345,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v556: stops mid-episode Cloudflare popups. (1) Invisible mode now stays invisible: only the app-open probe may fall back to the visible TV D-pad sheet; episode-tap and mid-playback probes never pop a sheet. (2) kwik.cx is treated as an embed host — a kwik challenge fails that link silently instead of opening the solver or CloudflareKiller, so no kwik popup interrupts playback. (3) The pre-playback probe now validates the mirror that actually holds the saved cookie (savedAnimePaheHost) instead of hardcoded .pw, which used to open a pointless bypass when the valid cookie was on .org/.com. (4) isCookieValid retries a transient interstitial once before declaring the cookie dead, avoiding false popups mid-episode. (5) All v555 fixes retained: pre-purge clearance snapshot so TV never saves a stale cookie, expanded visible sheet, storedActivity cache, per-host cookies, client hints, D-pad cursor bounds.",
+    "fileSize": 824553,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-11decf253d3f123897aa99a950fdcd75b9db33d21eab98bbc859540d2561e2cb"
+    "fileHash": "sha256-953d429e7eae05e0ad4b82bc054c32e3a649f034262dee552f42d1c6ae127a4a"
   }
 ]

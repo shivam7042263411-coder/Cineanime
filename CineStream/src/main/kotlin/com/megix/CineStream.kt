@@ -124,7 +124,11 @@ open class CineStream: Plugin() {
                     // Validate the mirror that actually holds the saved
                     // clearance; a cookie minted on .org is rejected by .pw.
                     CineStreamExtractors.probeAndResolveIfNeeded(
-                        (CineStreamExtractors.savedAnimePaheHost() ?: "https://animepahe.pw") + "/"
+                        (CineStreamExtractors.savedAnimePaheHost() ?: "https://animepahe.pw") + "/",
+                        // App open is the one place a TV user may be shown the
+                        // D-pad sheet if the invisible solve can't press
+                        // Turnstile. Request-triggered probes never do.
+                        allowVisibleFallback = true,
                     )
                 }.onFailure {
                     Log.e("CineStreamAutoBypass", "Cookie validation failed: ${it.message}")

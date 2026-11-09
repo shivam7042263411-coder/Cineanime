@@ -705,7 +705,9 @@ class CineAnimeProvider : MainAPI() {
 
         // Proactive Cloudflare bypass probe: if cookies expired mid-session,
         // pop the WebView before attempting to load links.
-        CineStreamExtractors.probeAndResolveIfNeeded("https://animepahe.pw/")
+        CineStreamExtractors.probeAndResolveIfNeeded(
+            (CineStreamExtractors.savedAnimePaheHost() ?: "https://animepahe.pw") + "/"
+        )
 
         val collected = mutableListOf<ExtractorLink>()
         val result = AnimePahe.invoke(res, subtitleCallback) { link ->

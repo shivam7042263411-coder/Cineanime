@@ -43,6 +43,7 @@ import com.megix.settings.SettingsWebView.showCloudflareBypass
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -280,13 +281,25 @@ object CineStreamExtractors {
             "Referer" to url,
         )
         val effective = injectWebviewCookies(url, headers)
-        val response = runCatching {
-            app.get(url, headers = effective, allowRedirects = true)
-        }.getOrNull() ?: return true
-        val valid = !isCloudflarePage(response)
-        if (valid) lastValidatedAt[bypassKey(url)] = System.currentTimeMillis()
-        Log.d(CF_LOG_TAG, "isCookieValid: $url valid=$valid code=${response.code}")
-        return valid
+        var lastCode = 0
+        // Cloudflare can serve a transient interstitial even with a valid
+        // clearance (edge rotation, rate limiting). Retry once before
+        // declaring the cookie dead — a single blip used to pop the solver
+        // in the middle of an episode.
+        repeat(2) { attempt ->
+            val response = runCatching {
+                app.get(url, headers = effective, allowRedirects = true)
+            }.getOrNull() ?: return true
+            lastCode = response.code
+            if (!isCloudflarePage(response)) {
+                lastValidatedAt[bypassKey(url)] = System.currentTimeMillis()
+                Log.d(CF_LOG_TAG, "isCookieValid: $url valid=true code=${response.code}")
+                return true
+            }
+            if (attempt == 0) delay(700)
+        }
+        Log.d(CF_LOG_TAG, "isCookieValid: $url valid=false code=$lastCode")
+        return false
     }
 
     /** Outcome of a user-triggered cookie check (settings screen). */
@@ -342,6 +355,10 @@ object CineStreamExtractors {
     suspend fun probeAndResolveIfNeeded(
         url: String = "https://animepahe.pw/",
         force: Boolean = false,
+        // Only the app-open probe opts in. Everything triggered by a request
+        // (episode tap, mid-playback challenge) must stay invisible when the
+        // user enabled invisible mode — no sheet over the episode.
+        allowVisibleFallback: Boolean = false,
     ): Boolean {
         val key = bypassKey(url)
 
@@ -416,6 +433,7 @@ object CineStreamExtractors {
                         ctx,
                         solveUrl,
                         webViewVisible = Settings.cloudflareWebViewVisible(),
+                        allowVisibleFallback = allowVisibleFallback,
                     ) { success ->
                         Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
                         deferred.complete(success)
@@ -539,6 +557,13 @@ object CineStreamExtractors {
         val response = app.get(url, headers = effectiveHeaders, allowRedirects = allowRedirects)
         if (!isCloudflarePage(response)) return response
 
+        // Embed hosts (kwik) are behind Cloudflare too, but solving them would
+        // interrupt the episode. Fail that link silently instead.
+        if (Settings.isEmbedHost(url)) {
+            Log.d(CF_LOG_TAG, "cfGet: embed host challenged, skipping bypass for $url")
+            return response
+        }
+
         // Hosts covered by the plugin's own bypass must use it and nothing
         // else. CloudflareKiller starts a second WebView and its init calls
         // removeAllCookies(null), which wipes the very cookie the bypass sheet
@@ -585,6 +610,12 @@ object CineStreamExtractors {
         val effectiveHeaders = injectWebviewCookies(url, headersWithAgent)
         val response = app.post(url, headers = effectiveHeaders, data = data, json = json, allowRedirects = allowRedirects)
         if (!isCloudflarePage(response)) return response
+
+        // Same rule as cfGet: never pop the solver for an embed host mid-episode.
+        if (Settings.isEmbedHost(url)) {
+            Log.d(CF_LOG_TAG, "cfPost: embed host challenged, skipping bypass for $url")
+            return response
+        }
 
         // Same rule as cfGet: never race the plugin's bypass with a second
         // solver on hosts it owns.
