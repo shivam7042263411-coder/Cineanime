@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 556,
+    "version": 557,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v556: stops mid-episode Cloudflare popups. (1) Invisible mode now stays invisible: only the app-open probe may fall back to the visible TV D-pad sheet; episode-tap and mid-playback probes never pop a sheet. (2) kwik.cx is treated as an embed host — a kwik challenge fails that link silently instead of opening the solver or CloudflareKiller, so no kwik popup interrupts playback. (3) The pre-playback probe now validates the mirror that actually holds the saved cookie (savedAnimePaheHost) instead of hardcoded .pw, which used to open a pointless bypass when the valid cookie was on .org/.com. (4) isCookieValid retries a transient interstitial once before declaring the cookie dead, avoiding false popups mid-episode. (5) All v555 fixes retained: pre-purge clearance snapshot so TV never saves a stale cookie, expanded visible sheet, storedActivity cache, per-host cookies, client hints, D-pad cursor bounds.",
-    "fileSize": 824553,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v557: fixes TV crash when opening Cloudflare settings. (1) SettingsWebView was an `internal object` (Kotlin singleton); on Android TV the plugin's classloader couldn't find the static INSTANCE field, causing NoSuchFieldError when tapping the Open button in Cloudflare Bypass settings. Converted to a regular class with a companion object so static methods are generated properly. LoginType enum moved to top-level for clean cross-file access. (2) All v556 fixes retained: invisible mode never falls back to visible except at app open, kwik.cx challenges fail silently, pre-playback probe validates the correct mirror, isCookieValid retries transient interstitials, pre-purge clearance snapshot stops stale cookie saves.",
+    "fileSize": 824568,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-953d429e7eae05e0ad4b82bc054c32e3a649f034262dee552f42d1c6ae127a4a"
+    "fileHash": "sha256-e2493fe4e9cd194ad26e7579d98bdf16b18dca4c7312d6d17bfa288af21f37be"
   }
 ]

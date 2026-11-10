@@ -13,6 +13,7 @@ import android.webkit.CookieManager
 import android.widget.*
 import com.megix.CineStreamExtractors
 import com.megix.settings.SettingsTheme.dp
+import com.megix.settings.LoginType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -476,7 +477,7 @@ internal object SettingsDialog {
             sectionBg: Int,
             sectionBorder: Int,
             clipLabel: String,
-            loginType: SettingsWebView.LoginType? = null  // when set, shows a 🌐 Login button
+            loginType: LoginType? = null  // when set, shows a 🌐 Login button
         ): View {
             val sectionLayout = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -548,7 +549,7 @@ internal object SettingsDialog {
                         context, "🌐 Login",
                         sectionAccent, sectionBg, sectionBorder
                     ) {
-                        SettingsWebView.show(context, loginType) { token ->
+                        SettingsWebView.show(context, loginType!!) { token ->
                             // Auto-fill field and stage the token
                             input.setText(token)
                             input.setSelection(token.length)
@@ -626,7 +627,7 @@ internal object SettingsDialog {
             sectionBg     = SHOWBOX_BG,
             sectionBorder = SHOWBOX_BORDER,
             clipLabel     = "Febbox Token",
-            loginType     = SettingsWebView.LoginType.SHOWBOX
+            loginType     = LoginType.SHOWBOX
         ))
 
         // ── Divider between sections ─────────────────────────────
@@ -708,7 +709,7 @@ internal object SettingsDialog {
             sectionBg     = GRAM_BG,
             sectionBorder = GRAM_BORDER,
             clipLabel     = "GramCinema Token",
-            loginType     = SettingsWebView.LoginType.GRAMCINEMA
+            loginType     = LoginType.GRAMCINEMA
         ))
 
         // ── Card header (badge reflects whichever token was last staged) ──

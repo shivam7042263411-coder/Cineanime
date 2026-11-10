@@ -24,420 +24,425 @@ import androidx.fragment.app.FragmentActivity
 import com.megix.CF_BYPASS_USER_AGENT
 import com.megix.settings.SettingsTheme.dp
 
+/** Login dialog type. Kept top-level so SettingsDialog can reference it without companion-object quirks. */
+enum class LoginType { SHOWBOX, GRAMCINEMA }
+
 @SuppressLint("SetJavaScriptEnabled")
-internal object SettingsWebView {
+internal class SettingsWebView private constructor() {
 
-    private const val TAG = "CineStreamAuth"
+    companion object {
+        private const val TAG = "CineStreamAuth"
 
-    enum class LoginType { SHOWBOX, GRAMCINEMA }
-
-    private data class Config(
-        val title: String,
-        val startUrl: String,
-        val accentColor: Int,
-        val accentColorB: Int,
-        val tokenLabel: String,
-        val tokenCookieName: String,
-        val extractJs: String
-    )
-
-    private fun configFor(type: LoginType) = when (type) {
-        LoginType.SHOWBOX -> Config(
-            "Login to Febbox", "https://www.febbox.com/",
-            Color.parseColor("#F59E0B"), Color.parseColor("#D97706"),
-            "UI Token", "ui",
-            "(()=>{let m=document.cookie.match(/(?:^|;\\s*)ui=([^;]*)/);return m?decodeURIComponent(m[1]):''})()"
+        private data class Config(
+            val title: String,
+            val startUrl: String,
+            val accentColor: Int,
+            val accentColorB: Int,
+            val tokenLabel: String,
+            val tokenCookieName: String,
+            val extractJs: String
         )
-        LoginType.GRAMCINEMA -> Config(
-            "Login to GramCinema", "https://bollywood.eu.org/",
-            Color.parseColor("#F472B6"), Color.parseColor("#EC4899"),
-            "Bearer Token", "bearer_token",
-            "(()=>{const isReal=t=>t&&t.startsWith('eyJ0eXAiOi')&&!t.includes(' ');for(let k of ['token','bearer_token','access_token','auth_token','jwt','bearerToken','authToken','user_token','userToken','accessToken','authAccessToken']){let t=localStorage.getItem(k)||sessionStorage.getItem(k);if(isReal(t)){console.log('Found real token via key: '+k);return t;}}for(let i=0;i<localStorage.length;i++){let v=(localStorage.getItem(localStorage.key(i))||'').replace(/^Bearer\\s+/i,'').replace(/[\"']/g,'').trim();if(isReal(v)){console.log('Found real token hidden in storage!');return v;}}return '';})()"
-        )
-    }
 
-    // Only shim window.chrome, which some WebView builds lack and Cloudflare
-    // fingerprints. Never override navigator.userAgent here: the WebView's UA
-    // (settings.userAgentString) is already the device's real Chrome UA, and a
-    // JS override that disagrees with the Client Hints the engine sends makes
-    // Cloudflare treat the client as spoofed and re-challenge it indefinitely.
-    private const val SPOOF_JS = "if(!window.__csxSpoofed){window.__csxSpoofed=!0;if(!window.chrome)window.chrome={runtime:{},loadTimes:()=>{},csi:()=>{}}}"
-
-    private const val GRAMCINEMA_INTERCEPT_JS = "if(!window.__csxTokenHooked){window.__csxTokenHooked=!0;const isReal=s=>s&&t.startsWith('eyJ0eXAiOi')&&!s.includes(' ');let _set=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(n,v){if(n.toLowerCase()==='authorization'){let t=v.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real XHR token!');try{Android.onToken(t)}catch(e){}}}return _set.apply(this,arguments)};let _f=window.fetch;if(_f)window.fetch=function(u,i){try{if(i&&i.headers){let h=i.headers,a=typeof h.get==='function'?h.get('Authorization'):(h.Authorization||h.authorization||'');if(a){let t=a.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real Fetch token!');Android.onToken(t)}}}}catch(e){}return _f.apply(this,arguments)}}"
-
-    private class TokenBridge(private val deliver: (String) -> Unit) {
-        @JavascriptInterface
-        fun onToken(value: String) {
-            Log.d(TAG, "Native Bridge received token! Length: ${value.length}")
-            deliver(value)
-        }
-    }
-
-    // ── Cloudflare bypass ────────────────────────────────────────────────
-    // Phisher's CloudflareWebViewDialog: Material bottom sheet, 70% WebView,
-    // 2.5s slide-up, purge/poll/auto-save/auto-dismiss. The provider and
-    // request plumbing remain CineStream's; this is only the bypass UI.
-    private const val CF_FRAGMENT_TAG = "cf_bypass_auto"
-
-    // One invisible solve at a time. The timestamp also recovers if a solve's
-    // callback is ever lost (e.g. the Activity was destroyed): after three
-    // minutes a new solve is allowed instead of blocking forever.
-    private val headlessSolveStartedAt = java.util.concurrent.atomic.AtomicLong(0L)
-    private const val HEADLESS_SOLVE_STALE_MS = 180_000L
-
-    private fun claimHeadlessSolve(): Boolean {
-        val now = SystemClock.elapsedRealtime()
-        while (true) {
-            val current = headlessSolveStartedAt.get()
-            if (current != 0L && now - current < HEADLESS_SOLVE_STALE_MS) return false
-            if (headlessSolveStartedAt.compareAndSet(current, now)) return true
-        }
-    }
-
-    private fun releaseHeadlessSolve() {
-        headlessSolveStartedAt.set(0L)
-    }
-
-    private fun findFragmentActivity(context: Context): FragmentActivity? {
-        var ctx: Context? = context
-        while (ctx is ContextWrapper) {
-            if (ctx is FragmentActivity) return ctx
-            ctx = ctx.baseContext
-        }
-        return ctx as? FragmentActivity
-    }
-
-    fun showCloudflareBypass(
-        context: Context,
-        startUrl: String,
-        webViewVisible: Boolean = true,
-        // Invisible mode must stay invisible. Only the app-open probe opts in
-        // to the TV visible fallback; a challenge detected mid-playback must
-        // never pop a sheet over the episode.
-        allowVisibleFallback: Boolean = true,
-        onCookiesChanged: (Boolean) -> Unit = {},
-    ): Boolean {
-        val activity = findFragmentActivity(context)
-        if (activity == null) {
-            Log.e(TAG, "Cloudflare bypass needs a FragmentActivity; got ${context.javaClass.name}")
-            onCookiesChanged(false)
-            return false
-        }
-        if (activity.isFinishing || activity.isDestroyed) {
-            onCookiesChanged(false)
-            return false
-        }
-        // Don't block on a stale fragment tag — remove it so a new bypass can open.
-        activity.supportFragmentManager.findFragmentByTag(CF_FRAGMENT_TAG)?.let { frag ->
-            runCatching { activity.supportFragmentManager.beginTransaction().remove(frag).commit() }
+        private fun configFor(type: LoginType) = when (type) {
+            LoginType.SHOWBOX -> Config(
+                "Login to Febbox", "https://www.febbox.com/",
+                Color.parseColor("#F59E0B"), Color.parseColor("#D97706"),
+                "UI Token", "ui",
+                "(()=>{let m=document.cookie.match(/(?:^|;\\s*)ui=([^;]*)/);return m?decodeURIComponent(m[1]):''})()"
+            )
+            LoginType.GRAMCINEMA -> Config(
+                "Login to GramCinema", "https://bollywood.eu.org/",
+                Color.parseColor("#F472B6"), Color.parseColor("#EC4899"),
+                "Bearer Token", "bearer_token",
+                "(()=>{const isReal=t=>t&&t.startsWith('eyJ0eXAiOi')&&!t.includes(' ');for(let k of ['token','bearer_token','access_token','auth_token','jwt','bearerToken','authToken','user_token','userToken','accessToken','authAccessToken']){let t=localStorage.getItem(k)||sessionStorage.getItem(k);if(isReal(t)){console.log('Found real token via key: '+k);return t;}}for(let i=0;i<localStorage.length;i++){let v=(localStorage.getItem(localStorage.key(i))||'').replace(/^Bearer\\s+/i,'').replace(/[\"']/g,'').trim();if(isReal(v)){console.log('Found real token hidden in storage!');return v;}}return '';})()"
+            )
         }
 
-        val targetUrl = startUrl.trim().let {
-            if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it"
-        }
+        // Only shim window.chrome, which some WebView builds lack and Cloudflare
+        // fingerprints. Never override navigator.userAgent here: the WebView's UA
+        // (settings.userAgentString) is already the device's real Chrome UA, and a
+        // JS override that disagrees with the Client Hints the engine sends makes
+        // Cloudflare treat the client as spoofed and re-challenge it indefinitely.
+        private const val SPOOF_JS = "if(!window.__csxSpoofed){window.__csxSpoofed=!0;if(!window.chrome)window.chrome={runtime:{},loadTimes:()=>{},csi:()=>{}}}"
 
-        // TV detection: Cloudflare often serves an interactive Turnstile checkbox on TV
-        // that a headless WebView can never tap. If invisible solve fails on TV we
-        // fall back to the visible dialog so the user can tap it with D-pad.
-        val uiMode = activity.resources.configuration.uiMode
-        val isTv = uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK ==
-            android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+        private const val GRAMCINEMA_INTERCEPT_JS = "if(!window.__csxTokenHooked){window.__csxTokenHooked=!0;const isReal=s=>s&&t.startsWith('eyJ0eXAiOi')&&!s.includes(' ');let _set=XMLHttpRequest.prototype.setRequestHeader;XMLHttpRequest.prototype.setRequestHeader=function(n,v){if(n.toLowerCase()==='authorization'){let t=v.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real XHR token!');try{Android.onToken(t)}catch(e){}}}return _set.apply(this,arguments)};let _f=window.fetch;if(_f)window.fetch=function(u,i){try{if(i&&i.headers){let h=i.headers,a=typeof h.get==='function'?h.get('Authorization'):(h.Authorization||h.authorization||'');if(a){let t=a.replace(/^Bearer\\s+/i,'').trim();if(isReal(t)){console.log('Intercepted real Fetch token!');Android.onToken(t)}}}}catch(e){}return _f.apply(this,arguments)}}"
 
-        // Visible mode: show the bottom sheet dialog. Extracted so invisible mode
-        // can fall back to it on TV when the headless solver can't complete.
-        fun showVisible(): Boolean {
-            Log.d(TAG, "showVisible: launching visible Cloudflare dialog for $targetUrl")
-            return runCatching {
-                CloudflareWebViewDialog.newInstance(
-                    targetUrl,
-                    // Start expanded so the visible dialog is actually seen on
-                    // both phone and TV. startExpanded = false leaves the
-                    // bottom sheet collapsed at peekHeight 0 — invisible.
-                    startExpanded = true,
-                    webViewVisible = true,
-                    onFinished = onCookiesChanged,
-                )
-                .show(activity.supportFragmentManager, CF_FRAGMENT_TAG)
-                true
-            }.getOrElse {
-                Log.e(TAG, "Cloudflare bypass: failed to show dialog: ${it.message}")
-                onCookiesChanged(false)
-                false
+        private class TokenBridge(private val deliver: (String) -> Unit) {
+            @JavascriptInterface
+            fun onToken(value: String) {
+                Log.d(TAG, "Native Bridge received token! Length: ${value.length}")
+                deliver(value)
             }
         }
 
-        // Invisible mode: solve cookies headlessly with no UI shown.
-        if (!webViewVisible) {
-            // One invisible solve at a time. Parallel challenged requests can
-            // otherwise each create a headless WebView before the probe has
-            // registered its in-flight solve — extra page loads, extra memory,
-            // and main-thread stutter while a video is playing.
-            if (!claimHeadlessSolve()) {
-                Log.d(TAG, "Cloudflare bypass: invisible solve already running, not stacking another")
+        // ── Cloudflare bypass ────────────────────────────────────────────────
+        // Phisher's CloudflareWebViewDialog: Material bottom sheet, 70% WebView,
+        // 2.5s slide-up, purge/poll/auto-save/auto-dismiss. The provider and
+        // request plumbing remain CineStream's; this is only the bypass UI.
+        private const val CF_FRAGMENT_TAG = "cf_bypass_auto"
+
+        // One invisible solve at a time. The timestamp also recovers if a solve's
+        // callback is ever lost (e.g. the Activity was destroyed): after three
+        // minutes a new solve is allowed instead of blocking forever.
+        private val headlessSolveStartedAt = java.util.concurrent.atomic.AtomicLong(0L)
+        private const val HEADLESS_SOLVE_STALE_MS = 180_000L
+
+        private fun claimHeadlessSolve(): Boolean {
+            val now = SystemClock.elapsedRealtime()
+            while (true) {
+                val current = headlessSolveStartedAt.get()
+                if (current != 0L && now - current < HEADLESS_SOLVE_STALE_MS) return false
+                if (headlessSolveStartedAt.compareAndSet(current, now)) return true
+            }
+        }
+
+        private fun releaseHeadlessSolve() {
+            headlessSolveStartedAt.set(0L)
+        }
+
+        private fun findFragmentActivity(context: Context): FragmentActivity? {
+            var ctx: Context? = context
+            while (ctx is ContextWrapper) {
+                if (ctx is FragmentActivity) return ctx
+                ctx = ctx.baseContext
+            }
+            return ctx as? FragmentActivity
+        }
+
+        @JvmStatic
+        fun showCloudflareBypass(
+            context: Context,
+            startUrl: String,
+            webViewVisible: Boolean = true,
+            // Invisible mode must stay invisible. Only the app-open probe opts in
+            // to the TV visible fallback; a challenge detected mid-playback must
+            // never pop a sheet over the episode.
+            allowVisibleFallback: Boolean = true,
+            onCookiesChanged: (Boolean) -> Unit = {},
+        ): Boolean {
+            val activity = findFragmentActivity(context)
+            if (activity == null) {
+                Log.e(TAG, "Cloudflare bypass needs a FragmentActivity; got ${context.javaClass.name}")
                 onCookiesChanged(false)
                 return false
             }
-            Log.d(TAG, "Cloudflare bypass: starting invisible headless solve (isTv=$isTv)")
-            return runCatching {
-                CloudflareWebViewDialog.solveCookiesHeadless(activity, targetUrl) { success ->
-                    releaseHeadlessSolve()
-                    if (success) {
-                        Log.d(TAG, "Cloudflare bypass: invisible solve succeeded")
-                        onCookiesChanged(true)
-                    } else if (isTv && allowVisibleFallback) {
-                        // Invisible solve failed on TV — likely an interactive
-                        // Turnstile checkbox the headless WebView can't press.
-                        // Only the app-open probe may fall back to a visible
-                        // sheet; mid-playback must never interrupt the episode.
-                        Log.d(TAG, "Cloudflare bypass: invisible failed on TV, falling back to visible")
-                        if (!showVisible()) onCookiesChanged(false)
-                    } else {
-                        Log.w(TAG, "Cloudflare bypass: invisible solve failed, no fallback")
-                        onCookiesChanged(false)
-                    }
-                }
-                true
-            }.getOrElse {
-                releaseHeadlessSolve()
-                Log.e(TAG, "Cloudflare bypass: headless solve failed: ${it.message}")
-                if (isTv && allowVisibleFallback && showVisible()) {
-                    // Visible fallback launched on TV; its onFinished callback
-                    // will resolve the deferred. Return true so the coroutine waits.
+            if (activity.isFinishing || activity.isDestroyed) {
+                onCookiesChanged(false)
+                return false
+            }
+            // Don't block on a stale fragment tag — remove it so a new bypass can open.
+            activity.supportFragmentManager.findFragmentByTag(CF_FRAGMENT_TAG)?.let { frag ->
+                runCatching { activity.supportFragmentManager.beginTransaction().remove(frag).commit() }
+            }
+
+            val targetUrl = startUrl.trim().let {
+                if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it"
+            }
+
+            // TV detection: Cloudflare often serves an interactive Turnstile checkbox on TV
+            // that a headless WebView can never tap. If invisible solve fails on TV we
+            // fall back to the visible dialog so the user can tap it with D-pad.
+            val uiMode = activity.resources.configuration.uiMode
+            val isTv = uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK ==
+                android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+
+            // Visible mode: show the bottom sheet dialog. Extracted so invisible mode
+            // can fall back to it on TV when the headless solver can't complete.
+            fun showVisible(): Boolean {
+                Log.d(TAG, "showVisible: launching visible Cloudflare dialog for $targetUrl")
+                return runCatching {
+                    CloudflareWebViewDialog.newInstance(
+                        targetUrl,
+                        // Start expanded so the visible dialog is actually seen on
+                        // both phone and TV. startExpanded = false leaves the
+                        // bottom sheet collapsed at peekHeight 0 — invisible.
+                        startExpanded = true,
+                        webViewVisible = true,
+                        onFinished = onCookiesChanged,
+                    )
+                    .show(activity.supportFragmentManager, CF_FRAGMENT_TAG)
                     true
-                } else {
+                }.getOrElse {
+                    Log.e(TAG, "Cloudflare bypass: failed to show dialog: ${it.message}")
                     onCookiesChanged(false)
                     false
                 }
             }
-        }
 
-        return showVisible()
-    }
-
-    fun show(context: Context, type: LoginType, onToken: (String) -> Unit) {
-        val cfg = configFor(type)
-        val theme = SettingsTheme
-        val mainHandler = Handler(Looper.getMainLooper())
-
-        var tokenCaptured = false
-        var currentUrl = cfg.startUrl
-        var dialogRef: Dialog? = null
-
-        fun deliver(raw: String) {
-            if (tokenCaptured) return
-            val token = raw.trim().removeSurrounding("\"").trim()
-            if (token.isBlank() || token == "null") return
-
-            tokenCaptured = true
-            Log.i(TAG, "SUCCESS! Token captured for ${type.name}.")
-
-            mainHandler.post {
-                onToken(token)
-                Toast.makeText(context, "✓ ${cfg.tokenLabel} captured — tap outer Save to apply", Toast.LENGTH_SHORT).show()
-                dialogRef?.dismiss()
-            }
-        }
-
-        fun clearWebLoginSession(onCleared: () -> Unit) {
-            WebStorage.getInstance().deleteAllData()
-            CookieManager.getInstance().removeAllCookies { _ ->
-                CookieManager.getInstance().flush()
-                mainHandler.post { onCleared() }
-            }
-        }
-
-        val statusText = TextView(context).apply {
-            text = cfg.startUrl; textSize = 10f; setTextColor(theme.TEXT_SECONDARY); setSingleLine(true)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-
-        val progressBar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 3.dp(context))
-            progressTintList = android.content.res.ColorStateList.valueOf(cfg.accentColor)
-            max = 100; progress = 10
-        }
-
-        val webViewContainer = FrameLayout(context).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        }
-
-        val webView = WebView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-            setBackgroundColor(Color.WHITE)
-            isFocusable = true; isFocusableInTouchMode = true
-
-            settings.apply {
-                javaScriptEnabled = true; domStorageEnabled = true
-                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                useWideViewPort = true; loadWithOverviewMode = true
-                setSupportZoom(false); builtInZoomControls = false
-                userAgentString = CF_BYPASS_USER_AGENT
-
-                setSupportMultipleWindows(true)
-                javaScriptCanOpenWindowsAutomatically = true
-            }
-
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            addJavascriptInterface(TokenBridge(::deliver), "Android")
-
-            webChromeClient = object : WebChromeClient() {
-                override fun onProgressChanged(view: WebView, newProgress: Int) {
-                    progressBar.progress = newProgress
-                    progressBar.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
+            // Invisible mode: solve cookies headlessly with no UI shown.
+            if (!webViewVisible) {
+                // One invisible solve at a time. Parallel challenged requests can
+                // otherwise each create a headless WebView before the probe has
+                // registered its in-flight solve — extra page loads, extra memory,
+                // and main-thread stutter while a video is playing.
+                if (!claimHeadlessSolve()) {
+                    Log.d(TAG, "Cloudflare bypass: invisible solve already running, not stacking another")
+                    onCookiesChanged(false)
+                    return false
                 }
-                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                    Log.d(TAG, "JS: ${consoleMessage?.message()}")
-                    return super.onConsoleMessage(consoleMessage)
-                }
-
-                override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
-                    Log.d(TAG, "Creating new popup window for OAuth flow.")
-                    val popupWebView = WebView(context).apply {
-                        layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.userAgentString = view.settings.userAgentString
-                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
-                        webChromeClient = object : WebChromeClient() {
-                            override fun onCloseWindow(window: WebView) {
-                                Log.d(TAG, "Popup window called close(). Destroying overlay.")
-                                webViewContainer.removeView(window)
-                                window.destroy()
-                            }
-                        }
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
+                Log.d(TAG, "Cloudflare bypass: starting invisible headless solve (isTv=$isTv)")
+                return runCatching {
+                    CloudflareWebViewDialog.solveCookiesHeadless(activity, targetUrl) { success ->
+                        releaseHeadlessSolve()
+                        if (success) {
+                            Log.d(TAG, "Cloudflare bypass: invisible solve succeeded")
+                            onCookiesChanged(true)
+                        } else if (isTv && allowVisibleFallback) {
+                            // Invisible solve failed on TV — likely an interactive
+                            // Turnstile checkbox the headless WebView can't press.
+                            // Only the app-open probe may fall back to a visible
+                            // sheet; mid-playback must never interrupt the episode.
+                            Log.d(TAG, "Cloudflare bypass: invisible failed on TV, falling back to visible")
+                            if (!showVisible()) onCookiesChanged(false)
+                        } else {
+                            Log.w(TAG, "Cloudflare bypass: invisible solve failed, no fallback")
+                            onCookiesChanged(false)
                         }
                     }
-                    webViewContainer.addView(popupWebView)
-                    val transport = resultMsg?.obj as? WebView.WebViewTransport
-                    transport?.webView = popupWebView
-                    resultMsg?.sendToTarget()
-                    return true
+                    true
+                }.getOrElse {
+                    releaseHeadlessSolve()
+                    Log.e(TAG, "Cloudflare bypass: headless solve failed: ${it.message}")
+                    if (isTv && allowVisibleFallback && showVisible()) {
+                        // Visible fallback launched on TV; its onFinished callback
+                        // will resolve the deferred. Return true so the coroutine waits.
+                        true
+                    } else {
+                        onCookiesChanged(false)
+                        false
+                    }
                 }
             }
 
-            webViewClient = object : WebViewClient() {
-                private fun updateUrl(url: String) { currentUrl = url; mainHandler.post { statusText.text = url } }
+            return showVisible()
+        }
 
-                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) = updateUrl(url)
+        @JvmStatic
+        fun show(context: Context, type: LoginType, onToken: (String) -> Unit) {
+            val cfg = configFor(type)
+            val theme = SettingsTheme
+            val mainHandler = Handler(Looper.getMainLooper())
 
-                override fun onPageFinished(view: WebView, url: String) {
-                    updateUrl(url)
-                    view.evaluateJavascript(SPOOF_JS, null)
+            var tokenCaptured = false
+            var currentUrl = cfg.startUrl
+            var dialogRef: Dialog? = null
 
-                    if (type == LoginType.GRAMCINEMA) {
-                        view.evaluateJavascript(GRAMCINEMA_INTERCEPT_JS, null)
-                        var pollCount = 0
-                        val poll = object : Runnable {
-                            override fun run() {
-                                if (tokenCaptured || pollCount++ >= 40) return
-                                view.evaluateJavascript(cfg.extractJs) { res ->
-                                    val clean = res?.trim()?.removeSurrounding("\"")?.trim()
-                                    if (!clean.isNullOrBlank() && clean != "null") deliver(clean)
-                                    else mainHandler.postDelayed(this, 1500)
+            fun deliver(raw: String) {
+                if (tokenCaptured) return
+                val token = raw.trim().removeSurrounding("\"").trim()
+                if (token.isBlank() || token == "null") return
+
+                tokenCaptured = true
+                Log.i(TAG, "SUCCESS! Token captured for ${type.name}.")
+
+                mainHandler.post {
+                    onToken(token)
+                    Toast.makeText(context, "✓ ${cfg.tokenLabel} captured — tap outer Save to apply", Toast.LENGTH_SHORT).show()
+                    dialogRef?.dismiss()
+                }
+            }
+
+            fun clearWebLoginSession(onCleared: () -> Unit) {
+                WebStorage.getInstance().deleteAllData()
+                CookieManager.getInstance().removeAllCookies { _ ->
+                    CookieManager.getInstance().flush()
+                    mainHandler.post { onCleared() }
+                }
+            }
+
+            val statusText = TextView(context).apply {
+                text = cfg.startUrl; textSize = 10f; setTextColor(theme.TEXT_SECONDARY); setSingleLine(true)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val progressBar = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 3.dp(context))
+                progressTintList = android.content.res.ColorStateList.valueOf(cfg.accentColor)
+                max = 100; progress = 10
+            }
+
+            val webViewContainer = FrameLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            }
+
+            val webView = WebView(context).apply {
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                setBackgroundColor(Color.WHITE)
+                isFocusable = true; isFocusableInTouchMode = true
+
+                settings.apply {
+                    javaScriptEnabled = true; domStorageEnabled = true
+                    mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                    useWideViewPort = true; loadWithOverviewMode = true
+                    setSupportZoom(false); builtInZoomControls = false
+                    userAgentString = CF_BYPASS_USER_AGENT
+
+                    setSupportMultipleWindows(true)
+                    javaScriptCanOpenWindowsAutomatically = true
+                }
+
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                addJavascriptInterface(TokenBridge(::deliver), "Android")
+
+                webChromeClient = object : WebChromeClient() {
+                    override fun onProgressChanged(view: WebView, newProgress: Int) {
+                        progressBar.progress = newProgress
+                        progressBar.visibility = if (newProgress < 100) View.VISIBLE else View.GONE
+                    }
+                    override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                        Log.d(TAG, "JS: ${consoleMessage?.message()}")
+                        return super.onConsoleMessage(consoleMessage)
+                    }
+
+                    override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
+                        Log.d(TAG, "Creating new popup window for OAuth flow.")
+                        val popupWebView = WebView(context).apply {
+                            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.userAgentString = view.settings.userAgentString
+                            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onCloseWindow(window: WebView) {
+                                    Log.d(TAG, "Popup window called close(). Destroying overlay.")
+                                    webViewContainer.removeView(window)
+                                    window.destroy()
                                 }
                             }
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
+                            }
                         }
-                        mainHandler.postDelayed(poll, 1500)
-                    }
-
-                    val cookieToken = CookieManager.getInstance().getCookie(url)?.split(";")
-                        ?.map { it.trim() }?.firstOrNull { it.startsWith("${cfg.tokenCookieName}=") }
-                        ?.removePrefix("${cfg.tokenCookieName}=")
-
-                    if (!cookieToken.isNullOrBlank()) { deliver(cookieToken); return }
-
-                    if (!tokenCaptured && cfg.extractJs.isNotBlank()) {
-                        view.evaluateJavascript(cfg.extractJs) { res ->
-                            val clean = res?.trim()?.removeSurrounding("\"")?.trim()
-                            if (!clean.isNullOrBlank() && clean != "null") deliver(clean)
-                        }
+                        webViewContainer.addView(popupWebView)
+                        val transport = resultMsg?.obj as? WebView.WebViewTransport
+                        transport?.webView = popupWebView
+                        resultMsg?.sendToTarget()
+                        return true
                     }
                 }
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
+
+                webViewClient = object : WebViewClient() {
+                    private fun updateUrl(url: String) { currentUrl = url; mainHandler.post { statusText.text = url } }
+
+                    override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) = updateUrl(url)
+
+                    override fun onPageFinished(view: WebView, url: String) {
+                        updateUrl(url)
+                        view.evaluateJavascript(SPOOF_JS, null)
+
+                        if (type == LoginType.GRAMCINEMA) {
+                            view.evaluateJavascript(GRAMCINEMA_INTERCEPT_JS, null)
+                            var pollCount = 0
+                            val poll = object : Runnable {
+                                override fun run() {
+                                    if (tokenCaptured || pollCount++ >= 40) return
+                                    view.evaluateJavascript(cfg.extractJs) { res ->
+                                        val clean = res?.trim()?.removeSurrounding("\"")?.trim()
+                                        if (!clean.isNullOrBlank() && clean != "null") deliver(clean)
+                                        else mainHandler.postDelayed(this, 1500)
+                                    }
+                                }
+                            }
+                            mainHandler.postDelayed(poll, 1500)
+                        }
+
+                        val cookieToken = CookieManager.getInstance().getCookie(url)?.split(";")
+                            ?.map { it.trim() }?.firstOrNull { it.startsWith("${cfg.tokenCookieName}=") }
+                            ?.removePrefix("${cfg.tokenCookieName}=")
+
+                        if (!cookieToken.isNullOrBlank()) { deliver(cookieToken); return }
+
+                        if (!tokenCaptured && cfg.extractJs.isNotBlank()) {
+                            view.evaluateJavascript(cfg.extractJs) { res ->
+                                val clean = res?.trim()?.removeSurrounding("\"")?.trim()
+                                if (!clean.isNullOrBlank() && clean != "null") deliver(clean)
+                            }
+                        }
+                    }
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
+                }
             }
-        }
 
-        webViewContainer.addView(webView)
+            webViewContainer.addView(webView)
 
-        val tvCursor = TvTouchCursor(context, webViewContainer, webView)
+            val tvCursor = TvTouchCursor(context, webViewContainer, webView)
 
-        val titleBar = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            setPadding(16.dp(context), 12.dp(context), 10.dp(context), 12.dp(context))
-            background = theme.colorDrawable(theme.BG_CARD)
-
-            addView(SettingsWidgets.accentBar(context, cfg.accentColor, cfg.accentColorB))
-            addView(TextView(context).apply {
-                text = cfg.title; textSize = 14f; setTypeface(null, Typeface.BOLD)
-                setTextColor(theme.TEXT_PRIMARY)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            addView(SettingsWidgets.hSpacer(context, 8))
-            addView(SettingsWidgets.pillBtn(context, "🖱 TV Cursor", cfg.accentColor, theme.BG_CARD, cfg.accentColor) {
-                tvCursor.toggle()
-                Toast.makeText(
-                    context,
-                    if (tvCursor.isActive) "Touch cursor ON — D-pad to move, OK to tap" else "Touch cursor OFF",
-                    Toast.LENGTH_SHORT
-                ).show()
-            })
-            addView(SettingsWidgets.hSpacer(context, 8))
-            addView(SettingsWidgets.pillBtn(context, "✕ Close", theme.TEXT_SECONDARY, theme.BG_CARD, Color.parseColor("#2A2D3E")) { dialogRef?.dismiss() })
-        }
-
-        val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL; background = theme.colorDrawable(theme.BG_DARK)
-            addView(titleBar); addView(progressBar); addView(webViewContainer)
-            addView(LinearLayout(context).apply {
+            val titleBar = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                setPadding(16.dp(context), 6.dp(context), 16.dp(context), 8.dp(context))
+                setPadding(16.dp(context), 12.dp(context), 10.dp(context), 12.dp(context))
                 background = theme.colorDrawable(theme.BG_CARD)
-                addView(statusText)
-            })
-        }
 
-        dialogRef = object : Dialog(context, android.R.style.Theme_Black_NoTitleBar_Fullscreen) {
-            override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-                if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK
-                    && event.action == android.view.KeyEvent.ACTION_UP
-                    && tvCursor.isActive
-                ) {
-                    tvCursor.hide()
-                    return true
-                }
-                if (tvCursor.onKeyEvent(event)) return true
-                return super.dispatchKeyEvent(event)
+                addView(SettingsWidgets.accentBar(context, cfg.accentColor, cfg.accentColorB))
+                addView(TextView(context).apply {
+                    text = cfg.title; textSize = 14f; setTypeface(null, Typeface.BOLD)
+                    setTextColor(theme.TEXT_PRIMARY)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(SettingsWidgets.hSpacer(context, 8))
+                addView(SettingsWidgets.pillBtn(context, "🖱 TV Cursor", cfg.accentColor, theme.BG_CARD, cfg.accentColor) {
+                    tvCursor.toggle()
+                    Toast.makeText(
+                        context,
+                        if (tvCursor.isActive) "Touch cursor ON — D-pad to move, OK to tap" else "Touch cursor OFF",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                })
+                addView(SettingsWidgets.hSpacer(context, 8))
+                addView(SettingsWidgets.pillBtn(context, "✕ Close", theme.TEXT_SECONDARY, theme.BG_CARD, Color.parseColor("#2A2D3E")) { dialogRef?.dismiss() })
             }
-        }.apply {
-            requestWindowFeature(Window.FEATURE_NO_TITLE); setContentView(root); setCancelable(true)
-            setOnDismissListener { tvCursor.destroy(); webView.stopLoading(); webView.destroy() }
-            window?.apply {
-                setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-                clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
-                setBackgroundDrawable(theme.colorDrawable(theme.BG_DARK))
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    @Suppress("DEPRECATION") setDecorFitsSystemWindows(false)
-                    root.setOnApplyWindowInsetsListener { view, insets ->
-                        val ime = insets.getInsets(WindowInsets.Type.ime() or WindowInsets.Type.systemBars())
-                        view.setPadding(ime.left, ime.top, ime.right, ime.bottom)
-                        insets
+
+            val root = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL; background = theme.colorDrawable(theme.BG_DARK)
+                addView(titleBar); addView(progressBar); addView(webViewContainer)
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                    setPadding(16.dp(context), 6.dp(context), 16.dp(context), 8.dp(context))
+                    background = theme.colorDrawable(theme.BG_CARD)
+                    addView(statusText)
+                })
+            }
+
+            dialogRef = object : Dialog(context, android.R.style.Theme_Black_NoTitleBar_Fullscreen) {
+                override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+                    if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK
+                        && event.action == android.view.KeyEvent.ACTION_UP
+                        && tvCursor.isActive
+                    ) {
+                        tvCursor.hide()
+                        return true
                     }
-                } else {
-                    @Suppress("DEPRECATION")
-                    setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+                    if (tvCursor.onKeyEvent(event)) return true
+                    return super.dispatchKeyEvent(event)
                 }
+            }.apply {
+                requestWindowFeature(Window.FEATURE_NO_TITLE); setContentView(root); setCancelable(true)
+                setOnDismissListener { tvCursor.destroy(); webView.stopLoading(); webView.destroy() }
+                window?.apply {
+                    setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+                    clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+                    setBackgroundDrawable(theme.colorDrawable(theme.BG_DARK))
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        @Suppress("DEPRECATION") setDecorFitsSystemWindows(false)
+                        root.setOnApplyWindowInsetsListener { view, insets ->
+                            val ime = insets.getInsets(WindowInsets.Type.ime() or WindowInsets.Type.systemBars())
+                            view.setPadding(ime.left, ime.top, ime.right, ime.bottom)
+                            insets
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+                    }
+                }
+                show()
             }
-            show()
-        }
 
-        clearWebLoginSession {
-            webView.clearCache(true)
-            webView.clearHistory()
-            webView.loadUrl(cfg.startUrl)
-            webView.requestFocus()
+            clearWebLoginSession {
+                webView.clearCache(true)
+                webView.clearHistory()
+                webView.loadUrl(cfg.startUrl)
+                webView.requestFocus()
+            }
         }
     }
 }

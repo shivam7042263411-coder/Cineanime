@@ -39,7 +39,7 @@ import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 
 import com.megix.settings.Settings
-import com.megix.settings.SettingsWebView.showCloudflareBypass
+import com.megix.settings.SettingsWebView.Companion.showCloudflareBypass
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
