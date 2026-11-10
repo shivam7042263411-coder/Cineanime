@@ -393,7 +393,7 @@ internal object SettingsDialog {
                         // Never let a linkage error (stale/duplicate plugin dex on TV)
                         // take down the whole app. Surface it instead.
                         try {
-                            SettingsWebView.showCloudflareBypass(
+                            CineStreamSolverUi.showCloudflareBypass(
                                 context,
                                 "https://$host",
                                 webViewVisible = Settings.cloudflareWebViewVisible(),
@@ -565,7 +565,7 @@ internal object SettingsDialog {
                         sectionAccent, sectionBg, sectionBorder
                     ) {
                         try {
-                            SettingsWebView.show(context, loginType!!) { token ->
+                            CineStreamSolverUi.show(context, loginType!!) { token ->
                                 // Auto-fill field and stage the token
                                 input.setText(token)
                                 input.setSelection(token.length)

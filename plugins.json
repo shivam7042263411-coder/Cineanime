@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 558,
+    "version": 559,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v558: stops the TV crash for good. The crash was a linkage mismatch: on the TV the plugin classloader had a SettingsDialog from one build calling a SettingsWebView from another, so the expected static field did not exist (NoSuchFieldError). v558 wraps every cross-class solver call in a Throwable guard, so a stale or duplicate plugin dex can no longer kill the app - worst case you get a Toast naming the failure and playback continues. Applies to the Open button in Cloudflare Bypass settings, the Febbox/GramCinema Login button, and the mid-playback probe. If the TV still shows a Toast, remove every CineStream entry from Plugins, force-stop CloudStream, then install this build once. All v556/v557 behaviour retained: invisible mode only falls back to visible at app open, kwik.cx challenges fail silently, pre-playback probe validates the mirror holding the cookie, isCookieValid retries transient interstitials, pre-purge clearance snapshot prevents stale cookie saves.",
-    "fileSize": 825068,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v559: real fix for the Android TV crash. CloudStream loads plugins with PathClassLoader(pluginFile, appClassLoader), which checks the app's own dex first. The TV's CloudStream APK contains its own com.megix.settings.SettingsWebView (app/src/main/java/com/megix/settings/SettingsWebView.kt plus a 5-second auto-bypass popup in MainActivity), so that old copy shadowed the plugin's class and the plugin's SettingsDialog linked against the wrong shape - hence NoSuchFieldError INSTANCE in base.apk!classes7.dex. v559 renames the plugin's solver to com.megix.settings.CineStreamSolverUi, which the APK does not contain, so the plugin now always resolves its own class. Every solver call is also guarded by a Throwable catch so a linkage problem can never kill the app. All v556-v558 behaviour retained: invisible mode only falls back to visible at app open, kwik.cx challenges fail silently, pre-playback probe validates the mirror holding the cookie, isCookieValid retries transient interstitials, pre-purge clearance snapshot prevents stale cookie saves.",
+    "fileSize": 824874,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-8e40a33a8d12b5cf97998ac149a98d640c35f4d19259dab7326213b657c55c73"
+    "fileHash": "sha256-a6b60b883841e434348b9a500afc5d7e2cd4ddba6a26feb001c98cd3a968ffc6"
   }
 ]

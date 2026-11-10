@@ -28,7 +28,7 @@ import com.megix.settings.SettingsTheme.dp
 enum class LoginType { SHOWBOX, GRAMCINEMA }
 
 @SuppressLint("SetJavaScriptEnabled")
-internal class SettingsWebView private constructor() {
+internal class CineStreamSolverUi private constructor() {
 
     companion object {
         private const val TAG = "CineStreamAuth"
