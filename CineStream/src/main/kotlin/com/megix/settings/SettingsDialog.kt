@@ -390,11 +390,26 @@ internal object SettingsDialog {
 
                     actionsRow.removeAllViews()
                     actionsRow.addView(SettingsWidgets.pillBtn(context, "🌐 Open", Color.parseColor("#60A5FA"), Color.parseColor("#0B1120"), Color.parseColor("#1D4ED8")) {
-                        SettingsWebView.showCloudflareBypass(
-                            context,
-                            "https://$host",
-                            webViewVisible = Settings.cloudflareWebViewVisible(),
-                        ) { refreshRow() }
+                        // Never let a linkage error (stale/duplicate plugin dex on TV)
+                        // take down the whole app. Surface it instead.
+                        try {
+                            SettingsWebView.showCloudflareBypass(
+                                context,
+                                "https://$host",
+                                webViewVisible = Settings.cloudflareWebViewVisible(),
+                            ) { refreshRow() }
+                        } catch (t: Throwable) {
+                            android.util.Log.e(
+                                "CineStreamCloudflare",
+                                "Open solver failed: ${t.javaClass.name}: ${t.message}", t
+                            )
+                            Toast.makeText(
+                                context,
+                                "Solver unavailable (${t.javaClass.simpleName}). " +
+                                    "Remove duplicate CineStream plugins, restart the app, reinstall.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     })
                     if (hasCookie) {
                         actionsRow.addView(SettingsWidgets.hSpacer(context, 6))
@@ -549,12 +564,24 @@ internal object SettingsDialog {
                         context, "🌐 Login",
                         sectionAccent, sectionBg, sectionBorder
                     ) {
-                        SettingsWebView.show(context, loginType!!) { token ->
-                            // Auto-fill field and stage the token
-                            input.setText(token)
-                            input.setSelection(token.length)
-                            pending[pendingKey] = token
-                            savedBadge.text = "✓ Staged"
+                        try {
+                            SettingsWebView.show(context, loginType!!) { token ->
+                                // Auto-fill field and stage the token
+                                input.setText(token)
+                                input.setSelection(token.length)
+                                pending[pendingKey] = token
+                                savedBadge.text = "✓ Staged"
+                            }
+                        } catch (t: Throwable) {
+                            android.util.Log.e(
+                                "CineStreamAuth",
+                                "Login WebView failed: ${t.javaClass.name}: ${t.message}", t
+                            )
+                            Toast.makeText(
+                                context,
+                                "Login unavailable (${t.javaClass.simpleName}). Reinstall the plugin.",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     })
                 }

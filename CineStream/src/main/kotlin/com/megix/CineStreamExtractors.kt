@@ -429,15 +429,25 @@ object CineStreamExtractors {
         try {
             val solved = withContext(Dispatchers.Main.immediate) {
                 suspendCancellableCoroutine<Boolean> { continuation ->
-                    val launched = showCloudflareBypass(
-                        ctx,
-                        solveUrl,
-                        webViewVisible = Settings.cloudflareWebViewVisible(),
-                        allowVisibleFallback = allowVisibleFallback,
-                    ) { success ->
-                        Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
-                        deferred.complete(success)
-                        if (continuation.isActive) continuation.resume(success)
+                    // A stale/duplicate plugin dex on TV can make this linkage fail
+                    // (NoSuchFieldError / NoSuchMethodError). Never crash playback.
+                    val launched = runCatching {
+                        showCloudflareBypass(
+                            ctx,
+                            solveUrl,
+                            webViewVisible = Settings.cloudflareWebViewVisible(),
+                            allowVisibleFallback = allowVisibleFallback,
+                        ) { success ->
+                            Log.d(CF_LOG_TAG, "probeAndResolveIfNeeded: bypass finished, success=$success")
+                            deferred.complete(success)
+                            if (continuation.isActive) continuation.resume(success)
+                        }
+                    }.getOrElse { t ->
+                        Log.e(
+                            CF_LOG_TAG,
+                            "probeAndResolveIfNeeded: bypass unavailable: ${t.javaClass.name}: ${t.message}"
+                        )
+                        false
                     }
                     if (!launched && continuation.isActive) {
                         deferred.complete(false)
