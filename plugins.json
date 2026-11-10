@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 557,
+    "version": 558,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v557: fixes TV crash when opening Cloudflare settings. (1) SettingsWebView was an `internal object` (Kotlin singleton); on Android TV the plugin's classloader couldn't find the static INSTANCE field, causing NoSuchFieldError when tapping the Open button in Cloudflare Bypass settings. Converted to a regular class with a companion object so static methods are generated properly. LoginType enum moved to top-level for clean cross-file access. (2) All v556 fixes retained: invisible mode never falls back to visible except at app open, kwik.cx challenges fail silently, pre-playback probe validates the correct mirror, isCookieValid retries transient interstitials, pre-purge clearance snapshot stops stale cookie saves.",
-    "fileSize": 824568,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v558: stops the TV crash for good. The crash was a linkage mismatch: on the TV the plugin classloader had a SettingsDialog from one build calling a SettingsWebView from another, so the expected static field did not exist (NoSuchFieldError). v558 wraps every cross-class solver call in a Throwable guard, so a stale or duplicate plugin dex can no longer kill the app - worst case you get a Toast naming the failure and playback continues. Applies to the Open button in Cloudflare Bypass settings, the Febbox/GramCinema Login button, and the mid-playback probe. If the TV still shows a Toast, remove every CineStream entry from Plugins, force-stop CloudStream, then install this build once. All v556/v557 behaviour retained: invisible mode only falls back to visible at app open, kwik.cx challenges fail silently, pre-playback probe validates the mirror holding the cookie, isCookieValid retries transient interstitials, pre-purge clearance snapshot prevents stale cookie saves.",
+    "fileSize": 825068,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-9a086aece9c6e975482badb6b891c4dc5a363fd9da10de91d195102d85ec5ced"
+    "fileHash": "sha256-8e40a33a8d12b5cf97998ac149a98d640c35f4d19259dab7326213b657c55c73"
   }
 ]
