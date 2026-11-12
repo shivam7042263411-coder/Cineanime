@@ -2,14 +2,14 @@
   {
     "url": "https://raw.githubusercontent.com/shivam7042263411-coder/Cineanime/refs/heads/builds/CineStream.cs3",
     "status": 1,
-    "version": 559,
+    "version": 560,
     "name": "CineStream",
     "internalName": "CineStream",
     "authors": [
       "megix"
     ],
-    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v559: real fix for the Android TV crash. CloudStream loads plugins with PathClassLoader(pluginFile, appClassLoader), which checks the app's own dex first. The TV's CloudStream APK contains its own com.megix.settings.SettingsWebView (app/src/main/java/com/megix/settings/SettingsWebView.kt plus a 5-second auto-bypass popup in MainActivity), so that old copy shadowed the plugin's class and the plugin's SettingsDialog linked against the wrong shape - hence NoSuchFieldError INSTANCE in base.apk!classes7.dex. v559 renames the plugin's solver to com.megix.settings.CineStreamSolverUi, which the APK does not contain, so the plugin now always resolves its own class. Every solver call is also guarded by a Throwable catch so a linkage problem can never kill the app. All v556-v558 behaviour retained: invisible mode only falls back to visible at app open, kwik.cx challenges fail silently, pre-playback probe validates the mirror holding the cookie, isCookieValid retries transient interstitials, pre-purge clearance snapshot prevents stale cookie saves.",
-    "fileSize": 824874,
+    "description": "One stop solution for Movies, Series, Anime, AsianDrama and Torrents (includes CineAnime: AniList + TMDB + AnimePahe). v560: fix the \"first solve saves an invalid cookie, needs three solves\" bug. The solver used to treat \"a cf_clearance exists\" as success, but Cloudflare can write the token while the challenge is still running, so the cookie that got saved was one the next request was challenged with. Both the visible and the invisible/headless solver now prove the minted cookie with one real request (carrying the WebView's own User-Agent, which cf_clearance is bound to) before saving it and reporting success; a rejected token is retried at most every 10s so the solver keeps running without hammering Cloudflare. All v559 behaviour retained: solver class renamed to com.megix.settings.CineStreamSolverUi so the APK's own com.megix.settings.SettingsWebView can never shadow it (the Android TV crash), every solver call guarded by a Throwable catch, invisible mode only falls back to visible at app open, kwik.cx challenges fail silently, pre-playback probe validates the mirror holding the cookie, isCookieValid retries transient interstitials, pre-purge clearance snapshot prevents stale cookie saves.",
+    "fileSize": 829226,
     "repositoryUrl": "https://github.com/shivam7042263411-coder/Cineanime",
     "language": "en",
     "tvTypes": [
@@ -21,6 +21,6 @@
     ],
     "iconUrl": "https://github.com/SaurabhKaperwan/CSX/raw/refs/heads/master/CineStream/icon.png",
     "apiVersion": 1,
-    "fileHash": "sha256-a6b60b883841e434348b9a500afc5d7e2cd4ddba6a26feb001c98cd3a968ffc6"
+    "fileHash": "sha256-ad9f1edd33074145b3a22acb9e324ac752ad379989e6a988adbb557833d6390a"
   }
 ]
