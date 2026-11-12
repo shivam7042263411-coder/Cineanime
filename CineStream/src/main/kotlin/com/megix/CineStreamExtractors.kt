@@ -340,6 +340,56 @@ object CineStreamExtractors {
     }
 
     /**
+     * Ground truth for the solver: does Cloudflare actually accept the
+     * clearance the WebView just minted?
+     *
+     * The solver used to treat "a cf_clearance exists" as success, but
+     * Cloudflare can set a token while the challenge is still running, so that
+     * "success" was often a cookie the next request was challenged with —
+     * which is why Settings showed it invalid and the user had to solve again
+     * and again. This makes one real request with the candidate cookie and the
+     * solver's own User-Agent before the cookie is trusted.
+     *
+     * The UA must be passed in: cf_clearance is bound to the UA that solved
+     * it, and at this point the solver has not saved its UA yet, so
+     * currentCfUserAgent() would return an unrelated string and reject every
+     * genuinely valid cookie.
+     *
+     * Returns false only when Cloudflare demonstrably serves a challenge.
+     * Network errors return true so a solve can never hang on a flaky link.
+     */
+    suspend fun isClearanceAccepted(
+        url: String,
+        cookieString: String,
+        userAgent: String,
+    ): Boolean {
+        if (extractClearanceFromCookie(cookieString) == null) return false
+        val headers = mutableMapOf(
+            // Same shape real requests use (see injectWebviewCookies), so a
+            // challenge here means the cookie is genuinely rejected.
+            "User-Agent" to userAgent,
+            "Accept-Language" to "en-US,en;q=0.9",
+            "Referer" to url,
+            "sec-ch-ua-mobile" to "?1",
+            "sec-ch-ua-platform" to "\"Android\"",
+            "Cookie" to mergeCookieStrings("", cookieString),
+        )
+        return runCatching {
+            val response = app.get(url, headers = headers, allowRedirects = true)
+            val accepted = !isCloudflarePage(response)
+            Log.d(CF_LOG_TAG, "isClearanceAccepted: $url accepted=$accepted code=${response.code}")
+            accepted
+        }.getOrElse {
+            Log.w(CF_LOG_TAG, "isClearanceAccepted: $url check errored (${it.message}) — assuming accepted")
+            true
+        }
+    }
+
+    /** A real cf_clearance token (>=15 chars), not a mid-challenge placeholder. */
+    private fun extractClearanceFromCookie(cookieStr: String): String? =
+        Regex("cf_clearance=([^;]{15,})").find(cookieStr)?.groupValues?.getOrNull(1)?.trim()
+
+    /**
      * Forget everything learnt in memory about cookie validity. Clearing the
      * saved cookies without this leaves a 2-minute "recently validated"
      * window that would skip the bypass and scrape with no cookie at all.

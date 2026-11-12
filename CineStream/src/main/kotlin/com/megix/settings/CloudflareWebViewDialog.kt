@@ -44,6 +44,12 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lagradost.api.Log
 import com.lagradost.cloudstream3.CommonActivity
+import com.megix.CineStreamExtractors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.collections.LinkedHashMap
 import kotlin.collections.LinkedHashSet
@@ -65,6 +71,10 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         private const val TAG = "CFWebViewDialog"
         private const val POLL_INTERVAL_MS = 2000L
         private const val POLL_TIMEOUT_MS = 120_000L
+        // How often a clearance that Cloudflare rejected may be re-checked.
+        // Bounds verification traffic while still allowing a later, genuinely
+        // accepted token to be saved without a new manual solve.
+        private const val VERIFY_RETRY_MS = 10_000L
         private const val ARG_URL = "target_url"
         private const val ARG_EXPANDED = "start_expanded"
         private const val ARG_VISIBLE = "web_view_visible"
@@ -279,11 +289,18 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             val POLL_INTERVAL_MS = 1_000L
             val POLL_TIMEOUT_MS = 120_000L
 
+            // Confirmation of the minted clearance happens off the main thread;
+            // see confirmThenSave for why a token alone is not success.
+            val verifyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            var verifying = false
+            var lastVerifyAtMs = 0L
+
             // One exit path for every outcome. WebView.destroy() can throw if
             // the Activity went away first (common on TV when the player is
             // closed mid-solve), so never let cleanup escape.
             fun teardown() {
                 handler.removeCallbacksAndMessages(null)
+                runCatching { verifyScope.cancel() }
                 runCatching { webView.stopLoading() }
                 runCatching { webView.destroy() }
                 runCatching { container.removeView(webView) }
@@ -355,28 +372,51 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                     ) && !isChallengeTitle(title)
 
                     if (hasClearanceCookie) {
-                        cookiesSaved = true
-                        val currentUrl = webView.url
-                            ?.takeIf { it.isNotBlank() && !isCloudflareOwnHost(it) }
-                            ?: targetUrl
-                        val solvedHost = runCatching { Uri.parse(currentUrl).host }
-                            .getOrNull()?.takeIf { it.isNotBlank() } ?: targetDomain
-                        val saveHost = solvedHost.removePrefix("www.")
+                        val now = System.currentTimeMillis()
+                        if (!verifying && now - lastVerifyAtMs >= VERIFY_RETRY_MS) {
+                            verifying = true
+                            lastVerifyAtMs = now
+                            val currentUrl = webView.url
+                                ?.takeIf { it.isNotBlank() && !isCloudflareOwnHost(it) }
+                                ?: targetUrl
+                            val solvedHost = runCatching { Uri.parse(currentUrl).host }
+                                .getOrNull()?.takeIf { it.isNotBlank() } ?: targetDomain
+                            val saveHost = solvedHost.removePrefix("www.")
+                            val solverUa = webView.settings.userAgentString.orEmpty()
 
-                        // cf_clearance is host-bound: persist it only for the
-                        // host that issued it. Copying it to the other mirrors
-                        // is invalid there and would shadow a later fresh solve.
-                        Settings.saveCookieForDomain(saveHost, cookieStr)
-
-                        webView.settings.userAgentString
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let { Settings.saveCfUserAgent(it) }
-
-                        Log.d(TAG, "Headless CF solve: ✅ Saved cookies for $saveHost")
-                        hasNotified = true
-                        teardown()
-                        onFinished(true)
-                        return
+                            // A token on its own is not success. Cloudflare can
+                            // set cf_clearance while the challenge is still
+                            // running; saving that produced a cookie every later
+                            // request was challenged with, which is why the
+                            // saved cookie read as invalid and needed three
+                            // solves. Persist only what a real request accepts.
+                            Log.d(TAG, "Headless CF solve: clearance seen, confirming with Cloudflare")
+                            verifyScope.launch {
+                                val accepted = runCatching {
+                                    CineStreamExtractors.isClearanceAccepted(
+                                        "https://$saveHost/", cookieStr, solverUa,
+                                    )
+                                }.getOrDefault(true)
+                                handler.post {
+                                    verifying = false
+                                    if (cookiesSaved || hasNotified) return@post
+                                    if (accepted) {
+                                        cookiesSaved = true
+                                        // cf_clearance is host-bound: persist it
+                                        // only for the host that issued it.
+                                        Settings.saveCookieForDomain(saveHost, cookieStr)
+                                        solverUa.takeIf { it.isNotBlank() }
+                                            ?.let { Settings.saveCfUserAgent(it) }
+                                        Log.d(TAG, "Headless CF solve: ✅ Saved verified cookies for $saveHost")
+                                        hasNotified = true
+                                        teardown()
+                                        onFinished(true)
+                                    } else {
+                                        Log.w(TAG, "Headless CF solve: clearance rejected by Cloudflare, still solving")
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     pollElapsedMs += POLL_INTERVAL_MS
@@ -446,6 +486,12 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
     // pre-existing token only when the page actually got past the challenge.
     private var pageLoaded = false
 
+    // Confirmation of a minted clearance runs off the main thread. A token on
+    // its own is not success — see confirmThenSave.
+    private val verifyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var verifying = false
+    private var lastVerifyAtMs = 0L
+
     private val targetHost: String by lazy {
         runCatching {
             val uri = Uri.parse(targetUrl)
@@ -470,9 +516,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
                 cookieStr, initialClearance, currentTitle, pageLoaded,
             )
             if (hasClearanceCookie) {
-                Log.d(TAG, "✅ Clearance cookie found! Saving.")
-                saveCookiesAndDismiss(cookieStr)
-                return
+                Log.d(TAG, "Clearance cookie found — confirming with Cloudflare")
+                confirmThenSave(cookieStr)
             }
 
             if (pollElapsedMs < POLL_TIMEOUT_MS) {
@@ -486,6 +531,47 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         }
     }
 
+    /**
+     * A cf_clearance token is not proof of success: Cloudflare can write one
+     * while the challenge is still running, and saving that produced a cookie
+     * every later request was challenged with — the "says done, Settings shows
+     * invalid, needs three solves" report. The candidate cookie is therefore
+     * proven with one real request (carrying the WebView's own UA, which
+     * cf_clearance is bound to) before it is saved and success is reported.
+     *
+     * Rejected tokens are re-checked at most every VERIFY_RETRY_MS, so the
+     * solver keeps running but never hammers Cloudflare.
+     */
+    private fun confirmThenSave(cookieStr: String) {
+        if (cookiesSaved || verifying) return
+        val now = System.currentTimeMillis()
+        if (now - lastVerifyAtMs < VERIFY_RETRY_MS) return
+        val solverUa = webView?.settings?.userAgentString?.takeIf { it.isNotBlank() } ?: return
+        lastVerifyAtMs = now
+        verifying = true
+        updateStatus("🔎 Confirming the clearance with Cloudflare...")
+
+        val solveHost = targetDomain.removePrefix("www.")
+        verifyScope.launch {
+            val accepted = runCatching {
+                CineStreamExtractors.isClearanceAccepted("https://$solveHost/", cookieStr, solverUa)
+            }.getOrDefault(true)
+            handler.post {
+                verifying = false
+                if (!isAdded || cookiesSaved) return@post
+                if (accepted) {
+                    Log.d(TAG, "Clearance confirmed by Cloudflare — saving")
+                    saveCookiesAndDismiss(cookieStr)
+                } else {
+                    // Keep the sheet and the poll alive: a real challenge is
+                    // still running and only its own token will be accepted.
+                    Log.w(TAG, "Clearance rejected by Cloudflare — still solving")
+                    updateStatus("🔄 Cloudflare is still challenging — please wait")
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         targetUrl = arguments?.getString(ARG_URL).orEmpty()
@@ -495,7 +581,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
     private fun scheduleNextPoll() {
         pollElapsedMs += POLL_INTERVAL_MS
-        updateStatus("⏳ Waiting for verification… (${pollElapsedMs / POLL_INTERVAL_MS}s)")
+        // Do not overwrite "confirming" while a verification is in flight.
+        if (!verifying) updateStatus("⏳ Waiting for verification… (${pollElapsedMs / POLL_INTERVAL_MS}s)")
 
         if (pollElapsedMs >= 2_500L && !startExpanded) {
             dialog?.window?.let { window ->
@@ -889,8 +976,8 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
         Log.d(TAG, "check title='$title' url=$url clearance=$hasClearanceCookie challenge=$isChallenge cookies=$cookieStr")
 
         if (hasClearanceCookie && !isChallenge) {
-            Log.d(TAG, "Clearance verified! Saving cookies.")
-            saveCookiesAndDismiss(cookieStr)
+            Log.d(TAG, "Clearance detected — confirming before saving")
+            confirmThenSave(cookieStr)
             return
         }
 
@@ -904,7 +991,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
             )
             Log.d(TAG, "JS document.cookie='$jsCookie' clearance=$jsHasClearance")
             if (jsHasClearance && !isChallenge) {
-                saveCookiesAndDismiss(jsCookie)
+                confirmThenSave(jsCookie)
             }
         }
 
@@ -1017,6 +1104,7 @@ internal class CloudflareWebViewDialog : BottomSheetDialogFragment() {
 
     override fun onDestroyView() {
         handler.removeCallbacks(cookiePollRunnable)
+        runCatching { verifyScope.cancel() }
         webView?.stopLoading()
         webView?.destroy()
         webView = null
